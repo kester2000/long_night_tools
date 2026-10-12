@@ -1,0 +1,6 @@
+{
+  "name": "long-night-assistant",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {"start": "node server.cjs", "test": "node --test tests/*.test.cjs"}
+}

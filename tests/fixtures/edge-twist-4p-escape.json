@@ -1,0 +1,117 @@
+{
+ "version": 2,
+ "base": {
+  "version": 1,
+  "config": {
+   "size": 9,
+   "mode": "TWIST",
+   "pool": "",
+   "event": "NONE",
+   "dynamicDoors": true,
+   "silent": false,
+   "exitCount": null
+  },
+  "segments": [
+   {
+    "name": "初始轨迹",
+    "events": [],
+    "sounds": [],
+    "anchors": []
+   }
+  ],
+  "active": 0,
+  "notes": "",
+  "players": [
+   {
+    "name": "0号",
+    "alive": true
+   },
+   {
+    "name": "1号",
+    "alive": true
+   },
+   {
+    "name": "2号",
+    "alive": true
+   },
+   {
+    "name": "3号",
+    "alive": true
+   }
+  ],
+  "target": "PREVIOUS"
+ },
+ "messages": [
+  {
+   "id": "e735ff40-7795-4f35-8d20-13eaab2ec8ae",
+   "text": "玩家人数：4",
+   "view": 0
+  },
+  {
+   "id": "afa60cd1-88bc-4123-83e5-91e9d4785aa9",
+   "text": "模式幻变\n区块池：默认",
+   "view": 0
+  },
+  {
+   "id": "193726d1-d618-4ca8-a8b8-f1d591e08261",
+   "text": "我是0号",
+   "view": 0
+  },
+  {
+   "id": "0bd5b8be-f195-473c-9fed-9d9115fe49fc",
+   "text": "[0号]玩家本回合的完整行动轨迹：\n(→撞)",
+   "view": 0
+  },
+  {
+   "id": "28721d73-ff66-4360-b261-157daee759ce",
+   "text": "[1号]玩家本回合的完整行动轨迹：\n←↑↓→←→↑←(停止)",
+   "view": 0
+  },
+  {
+   "id": "cfb18460-bc31-402b-a53b-5d7bb801c228",
+   "text": "[2号]玩家本回合的完整行动轨迹：\n←←(↓撞)",
+   "view": 1
+  },
+  {
+   "id": "19d6a77b-8365-4bc5-a019-e8cc271479b5",
+   "text": "[3号]玩家本回合的完整行动轨迹：\n↑(→撞)",
+   "view": 2
+  },
+  {
+   "id": "a96f89b8-1e8b-4cbb-b393-fd3a1910c279",
+   "text": "[0号]玩家本回合的完整行动轨迹：\n↑↑→↑↑→(→撞)",
+   "view": 3
+  },
+  {
+   "id": "6ad679dc-a72f-4a96-954d-ffa557ccc394",
+   "text": "[1号]玩家本回合的完整行动轨迹：\n↓↑→→↓(↓撞)",
+   "view": 0
+  },
+  {
+   "id": "7049e708-975e-4c4a-92d3-a4d390aac319",
+   "text": "[2号]玩家本回合的完整行动轨迹：\n↑↑(←撞)",
+   "view": 1
+  },
+  {
+   "id": "fb7fc343-3bd5-40d1-8a49-7031690996e7",
+   "text": "[3号]玩家本回合的完整行动轨迹：\n↓→(↓撞)",
+   "view": 2
+  },
+  {
+   "id": "d2a5475a-961c-4c6c-867a-b271eccaffaf",
+   "text": "【注意】在本回合内，门曾被按钮触发，共发生 1 次变化",
+   "view": 3
+  },
+  {
+   "id": "0d217cc7-f332-42af-82d5-b15edffece60",
+   "text": "[0号]玩家本回合的完整行动轨迹：\n↓↑←↓↓←↓←↓↓←↑(逃生)",
+   "view": 3
+  },
+  {
+   "id": "76fd6abd-a98b-47ce-be8f-7f762c158985",
+   "text": "[1号]玩家本回合的完整行动轨迹：\n←→←↓→←→←→↓(逃生)",
+   "view": 0
+  }
+ ],
+ "view": 1
+}
