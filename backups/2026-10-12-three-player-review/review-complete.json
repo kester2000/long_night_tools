@@ -1,0 +1,147 @@
+{
+  "version": 2,
+  "base": {
+    "version": 1,
+    "config": {
+      "size": 9,
+      "mode": "TWIST",
+      "pool": "",
+      "event": "NONE",
+      "dynamicDoors": true,
+      "silent": false,
+      "exitCount": null
+    },
+    "segments": [
+      {
+        "name": "初始轨迹",
+        "events": [],
+        "sounds": [],
+        "anchors": []
+      }
+    ],
+    "active": 0,
+    "notes": "由备份的完整赛况截图转录用于复盘；原始 Edge 存档另存 edge-original.json。未添加截图中不存在的声源私信。",
+    "players": [
+      {
+        "name": "0号",
+        "alive": true
+      },
+      {
+        "name": "1号",
+        "alive": true
+      },
+      {
+        "name": "2号",
+        "alive": true
+      },
+      {
+        "name": "3号",
+        "alive": true
+      }
+    ],
+    "target": "PREVIOUS"
+  },
+  "messages": [
+    {
+      "id": "668da764-46d5-48ce-b123-839dabf5aa89",
+      "text": "玩家人数：3",
+      "view": 0
+    },
+    {
+      "id": "5ad8a5be-41ae-4dfa-9f07-050bf0e0ce64",
+      "text": "模式幻变\n区块池：默认",
+      "view": 0
+    },
+    {
+      "id": "c9ff4c7c-f115-4d98-afd7-f6bc61648ba2",
+      "text": "我是0号",
+      "view": 0
+    },
+    {
+      "id": "9c6a1c3e-3894-408a-8137-5dd6d2279e2d",
+      "text": "区块池：2 4 8 9 12 13 14 45 46 47 48 49 E1 E4 E7 E8",
+      "view": 0
+    },
+    {
+      "id": "4759dfa8-5a17-4576-8453-36b3c698aca3",
+      "text": "【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙墙空空",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "065f7daf-a610-4573-b6d9-68d86f68ef1a",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n←(↓撞)",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "0be5f4fd-736c-4fde-9e76-e4ed40068e02",
+      "text": "【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙墙空空",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "3df4fe9b-7366-46ef-8191-e844a1fc3976",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↓→↓(→撞)",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "e29b9055-8cbd-41c3-b403-f6933f3d949b",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n[→啪嗒]→[↓啪嗒](→撞)",
+      "view": 1,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "review-2-0",
+      "view": 0,
+      "text": "【第 2 回合】\n[0号]玩家本回合的完整行动轨迹：\n→[→啪嗒]→[←啪嗒]→[←啪嗒]↑[↑啪嗒]↑↑[↑啪嗒](→撞)"
+    },
+    {
+      "id": "review-2-1",
+      "view": 0,
+      "text": "【第 2 回合】\n[1号]玩家本回合的完整行动轨迹：\n↑→↑(→撞)"
+    },
+    {
+      "id": "review-2-2",
+      "view": 0,
+      "text": "【第 2 回合】\n[2号]玩家本回合的完整行动轨迹：\n[↓啪嗒][↑啪嗒]↑[↑啪嗒]↓[↑啪嗒]↓[↓啪嗒][↓啪嗒]↓[↓啪嗒]↓[↓啪嗒]↓[↓啪嗒]↓(→撞)"
+    },
+    {
+      "id": "review-3-0",
+      "view": 0,
+      "text": "【第 3 回合】\n[0号]玩家本回合的完整行动轨迹：\n←(←撞)"
+    },
+    {
+      "id": "review-3-1",
+      "view": 0,
+      "text": "【第 3 回合】\n[1号]玩家本回合的完整行动轨迹：\n↓←←↓↓[↓啪嗒]→[→啪嗒]→[→啪嗒]→↑(逃生)"
+    },
+    {
+      "id": "review-3-2",
+      "view": 0,
+      "text": "【第 3 回合】\n[2号]玩家本回合的完整行动轨迹：\n[↑啪嗒]↑←↑(←撞)"
+    },
+    {
+      "id": "review-4-0",
+      "view": 0,
+      "text": "【第 4 回合】\n[0号]玩家本回合的完整行动轨迹：\n[→啪嗒]↓(→撞)(捕捉)"
+    },
+    {
+      "id": "review-doors-1",
+      "view": 0,
+      "text": "【第 1 回合】门曾被按钮触发，发生 1 次变化"
+    },
+    {
+      "id": "review-doors-2",
+      "view": 0,
+      "text": "【第 2 回合】门曾被按钮触发，发生 1 次变化"
+    },
+    {
+      "id": "review-doors-3",
+      "view": 0,
+      "text": "【第 3 回合】门曾被按钮触发，发生 1 次变化"
+    }
+  ],
+  "view": 2
+}
