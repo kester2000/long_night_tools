@@ -33,7 +33,7 @@
         if(!compatible(results[a].solution,results[b].solution,dr,dc,n))continue;
         if(A.observations.length&&B.observations.length){
           const obs=A.observations.concat(B.observations.map(o=>shift(o,dr,dc,n))),anchors=A.anchors.concat(B.anchors.map(o=>shift(o,dr,dc,n)));
-          const candidate=map(obs,anchors);
+          const candidate=config.reuseDomains===false?map(obs,anchors):E.mergeMaps(config,results[a].solution,results[b].solution,dr,dc,obs,anchors);
           if(!candidate.irregular&&!candidate.phases.length)continue;
           if(candidate.irregular&&obs.some(o=>!E.matchBlocks(config,obs,o).matches.length&&!E.matchBlocks(config,obs,o).gap))continue;
           if(!candidate.irregular){if(!proofs.has(candidate))proofs.set(candidate,E.verifyCompleteLayout(config,candidate,obs,1000));if(proofs.get(candidate).status==='impossible')continue;}

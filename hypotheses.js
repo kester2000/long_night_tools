@@ -22,42 +22,58 @@
     const prefix=worlds[0].log.filter(e=>e.index<=entry.index&&(e.kind==='move'&&e.outcome==='move'));
     return {before:{observations:common(before),trace:[{r:middle,c:middle},...prefix],positions:[{r:entry.r,c:entry.c}]},after:{observations:common(after),trace:common(traces),positions:[...positions.values()],exit:{r:middle,c:middle}},exitCount:new Set(exits.map(e=>E.key(e.r,e.c))).size};
   }
-  function analyze(config,base,messages,player,self,maxCases=96,initialChoices={}){
-    const initial=M.buildHypothesis(base,messages,player,self,initialChoices),first=initial.ambiguities[0];
+  const effectiveConfig=(config,model)=>({...config,heartPresence:model.config.heartPresence??config.heartPresence});
+  function search(config,base,messages,player,self,maxCases=null,initialChoices={}){
+    maxCases??=config.silent?512:96;
+    const replayChoices=choices=>M.buildHypothesis(base,messages,player,self,choices,{heartPresence:config.heartPresence});
+    const initial=replayChoices(initialChoices),first=initial.ambiguities[0];
     if(!first)return null;
     const segment=first.segment,queue=[{choices:initialChoices,kind:null}],cases=[],rejections={ground:new Set(),portal:new Set()},cache=new Map();let visits=0;
     function crossFits(choices){
       const b=M.build(base,messages,{[player]:choices}),groups=new Map();
+      const crossConfig=effectiveConfig(config,b.model);
       for(const h of b.relations.filter(h=>!['首次','被屏蔽'].includes(h.direction)&&(h.a===player||h.b===player))){const k=h.aNode+'|'+h.bNode;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(h);}
       for(const relations of groups.values()){
         const first=relations[0],[a,sa]=first.aNode.split(':').map(Number),[other,sb]=first.bNode.split(':').map(Number),A=b.views[a].model.segments[sa],B=b.views[other].model.segments[sb];
-        if(!A||!B)continue;const ra=E.replay(A,config.size),rb=E.replay(B,config.size);let possible=false;
+        if(!A||!B)continue;const ra=E.replay(A,config.size),rb=E.replay(B,config.size),as=E.solveMap(crossConfig,ra.observations,A.anchors),bs=E.solveMap(crossConfig,rb.observations,B.anchors);let possible=false;
         for(let dr=0;dr<config.size&&!possible;dr++)for(let dc=0;dc<config.size&&!possible;dc++){
           const shift=o=>({...o,r:E.mod(o.r+dr,config.size),c:E.mod(o.c+dc,config.size)});
           if(!relations.every(h=>E.bearings(shift(h.source),h.listener,config.size).includes(h.direction)))continue;
-          const observations=ra.observations.concat(rb.observations.map(shift)),solution=E.solveMap(config,observations,A.anchors.concat(B.anchors.map(shift)));
-          if(E.verifyCompleteLayout(config,solution,observations,1000).status!=='impossible')possible=true;
+          const observations=ra.observations.concat(rb.observations.map(shift)),solution=E.mergeMaps(crossConfig,as,bs,dr,dc,observations,A.anchors.concat(B.anchors.map(shift)));
+          if(E.verifyCompleteLayout(crossConfig,solution,observations,1000).status!=='impossible')possible=true;
         }
         if(!possible)return false;
       }return true;
     }
     function solve(model){
+      const branchConfig=effectiveConfig(config,model);
       const results=model.segments.map(s=>{
-        const replay=E.replay(s,config.size),key=JSON.stringify([replay.observations,s.anchors]);
-        if(!cache.has(key)){const solution=E.solveMap(config,replay.observations,s.anchors),proof=E.verifyCompleteLayout(config,solution,replay.observations,3000);cache.set(key,{solution,proof});}
+        const replay=E.replay(s,config.size),key=JSON.stringify([branchConfig.heartPresence,replay.observations,s.anchors]);
+        if(!cache.has(key)){const solution=E.solveMap(branchConfig,replay.observations,s.anchors),proof=E.verifyCompleteLayout(branchConfig,solution,replay.observations,3000);cache.set(key,{solution,proof});}
         return {replay,...cache.get(key)};
       });return results;
     }
+    // Prove the whole no-portal explanation separately. A first-step "ground"
+    // branch can still contain later portals, and an unfinished breadth-first
+    // search must not hide an already provable contradiction in walking alone.
+    let walkingChoices=initialChoices.__portalRecovery?{__portalRecovery:true}:{},walking=replayChoices(walkingChoices),walkingSteps=0;
+    while(walking.ambiguities.length&&walkingSteps++<512){
+      walkingChoices[walking.ambiguities[0].key]={kind:'ground'};
+      walking=replayChoices(walkingChoices);
+    }
+    const walkingResults=walking.ambiguities.length?[]:solve(walking.model);
+    const groundOnly={status:walking.ambiguities.length?'unknown':walking.branchErrors.length||walkingResults.some(r=>r.proof.status==='impossible')?'impossible':walkingResults.every(r=>r.proof.status==='verified')?'verified':'unknown'};
     function expand(state,built){
       const a=built.ambiguities[0],at=E.replay(built.model.segments[a.segment],config.size);
-      const matches=E.matchBlocks(config,at.observations,a.entry).matches,links=new Map();
-      for(const m of matches){const link=m.block.cells[m.lr*3+m.lc].portal;if(link)links.set(link.join(','),{kind:'portal',dr:link[0],dc:link[1]});}
+      const matches=E.matchBlocks(effectiveConfig(config,built.model),at.observations,a.entry).matches,links=new Map();
+      for(const m of matches){const link=m.block.cells[m.lr*3+m.lc].portal;if(link)links.set(link.join(','),{kind:'portal',dr:link[0],dc:link[1],...(a.requiresHeart?{requiresHeart:true}:{})});}
       const choices=[{kind:'ground'},...links.values()];
       for(const choice of choices)queue.push({kind:state.kind||choice.kind,choices:{...state.choices,[a.key]:choice}});
       if(!state.kind&&!links.size)rejections.portal.add('入口附近没有匹配的配对传送门区块');
     }
-    while(queue.length&&visits++<maxCases){
-      const state=queue.shift(),built=M.buildHypothesis(base,messages,player,self,state.choices);
+    while(queue.length&&visits<maxCases){
+      visits++;
+      const state=queue.shift(),built=replayChoices(state.choices);
       if(built.branchErrors.length){built.branchErrors.forEach(s=>rejections[state.kind]?.add(s));continue;}
       const results=solve(built.model);
       if(results.some(r=>r.proof.status==='impossible')){rejections[state.kind]?.add('与后续地形、墙壁或完整地图约束不符');continue;}
@@ -66,7 +82,7 @@
       cases.push({...state,built,results});
     }
     // Unsearched branches remain explicit possibilities; they never establish certainty.
-    for(const state of queue){const built=M.buildHypothesis(base,messages,player,self,state.choices);if(!built.branchErrors.length)cases.push({...state,built,results:solve(built.model),pending:true});}
+    for(const state of queue){const built=replayChoices(state.choices);if(!built.branchErrors.length)cases.push({...state,built,results:solve(built.model),pending:true});}
     const groups=['ground','portal'].map(kind=>{
       const worlds=cases.filter(c=>c.kind===kind),pending=worlds.some(c=>c.pending),reasons=[...rejections[kind]];
       if(!worlds.length)return {kind,excluded:true,reasons};
@@ -76,7 +92,28 @@
       const solution={irregular:config.size===10,phases:maps.flatMap(m=>m.solution.phases)},verified=!pending&&maps.every(m=>m.proof.status==='verified');
       const positions=new Map();let inSpace=false,remaining=new Set();
       for(const w of worlds)if(w.built.model.active===segment){const r=w.results[segment].replay,space=w.built.space;inSpace ||= !!space;if(space)remaining.add(space.remaining);positions.set(E.key(r.r,r.c),{r:r.r,c:r.c,inSpace:!!space});}
-      return {kind,excluded:false,pending:pending||!verified,cases:worlds.length,observations,trace,solution,positions:[...positions.values()],inSpace,remaining:[...remaining],verification:{status:verified?'verified':'unknown',blocks:verified?E.determinedBlocks(solution):[]}};
+      // Keep the correlations between a portal link, its exit, and the later collision.
+      // Their intersection alone erases exactly the evidence that distinguishes routes.
+      const alternatives=new Map();
+      for(const w of worlds){
+        const m=w.results[segment],r=m.replay,space=w.built.space;
+        const entryMatches=E.globallyFilter(E.matchBlocks(config,r.observations,first.entry),m.solution).matches;
+        const alternative={observations:r.observations,trace:r.trace,solution:m.solution,
+          positions:w.built.model.active===segment?[{r:r.r,c:r.c,inSpace:!!space}]:[],inSpace:!!space,remaining:space?[space.remaining]:[],
+          pending:!!w.pending||m.proof.status!=='verified',verification:{status:w.pending?'unknown':m.proof.status,blocks:w.pending?[]:m.proof.blocks},
+          entryBlocks:[...new Set(entryMatches.map(m=>m.id))],
+          teleports:r.log.filter(e=>e.kind==='teleport').map(e=>({r:e.r,c:e.c,round:e.clock?.round,step:e.clock?.step}))};
+        alternative.exampleRoute=m.proof.status==='verified'&&!w.pending?r.observations.filter(o=>o.kind==='action'&&o.arrival).map(o=>{
+          const placed=m.proof.layout.find(b=>E.mod(o.r-b.origin.r,config.size)<3&&E.mod(o.c-b.origin.c,config.size)<3);
+          if(!placed)return null;
+          const lr=E.mod(o.r-placed.origin.r,config.size),lc=E.mod(o.c-placed.origin.c,config.size);
+          const match=m.solution.phases.flatMap(p=>p.domains.flat()).find(b=>b.id===placed.id&&b.origin.r===placed.origin.r&&b.origin.c===placed.origin.c);
+          return {clock:o.clock,id:placed.id,lr,lc,types:match?.cellTypes?.[lr*3+lc]||[]};
+        }).filter(Boolean):[];
+        const key=JSON.stringify([r.observations,alternative.positions,alternative.pending]);
+        if(!alternatives.has(key))alternatives.set(key,alternative);
+      }
+      return {kind,excluded:false,pending:pending||!verified,cases:worlds.length,observations,trace,solution,positions:[...positions.values()],inSpace,remaining:[...remaining],verification:{status:verified?'verified':'unknown',blocks:verified?E.determinedBlocks(solution):[]},alternatives:[...alternatives.values()]};
     });
     const resolvedChoices=!queue.length&&cases.length===1&&!cases[0].pending&&cases[0].results.every(r=>r.proof.status==='verified')?cases[0].choices:null;
     const confirmedPortal=!queue.length&&groups.find(g=>g.kind==='ground').excluded&&!groups.find(g=>g.kind==='portal').excluded&&!groups.find(g=>g.kind==='portal').pending;
@@ -94,8 +131,38 @@
       }
       portalViews.afterAlternatives=[...unique.values()];
     }
-    return {player,segment,round:first.round,step:first.step,maskedUnknown:first.maskedUnknown,entry:first.entry,groups,truncated:queue.length>0,resolvedChoices,confirmedPortal,portalViews};
+    const requiresPortal=groundOnly.status==='impossible'&&cases.some(c=>!c.pending&&c.results.every(r=>r.proof.status==='verified')&&c.built.model.segments.some(s=>s.events.some(e=>e.portalLink)));
+    return {player,segment,round:first.round,step:first.step,maskedUnknown:first.maskedUnknown,silentUnknown:first.silentUnknown,recoveryUnknown:first.recoveryUnknown,recovery:initialChoices.__portalRecovery?'missing':null,entry:first.entry,groups,truncated:queue.length>0,resolvedChoices,confirmedPortal,portalViews,groundOnly,requiresPortal,search:{visited:visits,budget:maxCases,pending:queue.length}};
   }
-  function all(config,notebook){return Array.from({length:notebook.count},(_,id)=>analyze(config,notebook.base,notebook.messages,id,notebook.self,96,notebook.choices?.[id]||{})).filter(Boolean);}
-  const api={analyze,all,portalFrames};if(typeof module!=='undefined')module.exports=api;else root.LongNightHypotheses=api;
+  function analyze(config,base,messages,player,self,maxCases=null,initialChoices={}){
+    const run=choices=>search(config,base,messages,player,self,maxCases,choices);
+    let result=run(initialChoices);
+    // Budget exhaustion is uncertainty, not a contradiction. Reopen choices
+    // only after the current explanation has actually been disproved.
+    if(result){if(result.truncated||result.groups.some(g=>!g.excluded))return result;}
+    else{
+      const built=M.buildHypothesis(base,messages,player,self,initialChoices,{heartPresence:config.heartPresence});
+      const impossible=built.branchErrors.length||built.model.segments.some(s=>{
+        const observations=E.replay(s,config.size).observations,cfg=effectiveConfig(config,built.model);
+        return E.verifyCompleteLayout(cfg,E.solveMap(cfg,observations,s.anchors),observations,3000).status==='impossible';
+      });
+      if(!impossible)return null;
+    }
+    if(Object.keys(initialChoices).some(k=>!k.startsWith('__'))){
+      const seed=initialChoices.__portalRecovery?{__portalRecovery:true}:{},reopened=run(seed);
+      if(reopened){result={...reopened,recovery:'reopened',reopenedChoices:seed};if(reopened.truncated||reopened.groups.some(g=>!g.excluded))return result;}
+    }
+    if(!initialChoices.__portalRecovery){
+      const seed={__portalRecovery:true},recovered=run(seed);
+      if(recovered)return {...recovered,recovery:'missing',reopenedChoices:seed};
+    }
+    return result;
+  }
+  // Shared by Worker and file:// fallback; compare updates to avoid rebuild loops.
+  function choiceUpdates(hypotheses,previous={}){
+    const updates=hypotheses.map(h=>[h.player,h.resolvedChoices||h.reopenedChoices]).filter(([id,c])=>c&&JSON.stringify(c)!==JSON.stringify(previous[id]||{}));
+    return updates.length?{...previous,...Object.fromEntries(updates)}:null;
+  }
+  function all(config,notebook){return Array.from({length:notebook.count},(_,id)=>analyze(config,notebook.base,notebook.messages,id,notebook.self,null,notebook.choices?.[id]||{})).filter(Boolean);}
+  const api={analyze,all,portalFrames,choiceUpdates};if(typeof module!=='undefined')module.exports=api;else root.LongNightHypotheses=api;
 })(globalThis);

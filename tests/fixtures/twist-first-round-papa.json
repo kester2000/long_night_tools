@@ -1,0 +1,97 @@
+{
+  "version": 2,
+  "base": {
+    "version": 1,
+    "config": {
+      "size": 9,
+      "mode": "TWIST",
+      "pool": "",
+      "event": "NONE",
+      "dynamicDoors": true,
+      "silent": false,
+      "exitCount": null
+    },
+    "segments": [
+      {
+        "name": "初始轨迹",
+        "events": [],
+        "sounds": [],
+        "anchors": []
+      }
+    ],
+    "active": 0,
+    "notes": "",
+    "players": [
+      {
+        "name": "0号",
+        "alive": true
+      },
+      {
+        "name": "1号",
+        "alive": true
+      },
+      {
+        "name": "2号",
+        "alive": true
+      },
+      {
+        "name": "3号",
+        "alive": true
+      }
+    ],
+    "target": "PREVIOUS"
+  },
+  "messages": [
+    {
+      "id": "0",
+      "text": "玩家人数：3",
+      "view": 0
+    },
+    {
+      "id": "1",
+      "text": "模式幻变\n区块池：默认",
+      "view": 0
+    },
+    {
+      "id": "2",
+      "text": "我是0号",
+      "view": 0
+    },
+    {
+      "id": "3",
+      "text": "区块池：2 4 8 9 12 13 14 45 46 47 48 49 E1 E4 E7 E8",
+      "view": 0
+    },
+    {
+      "id": "4",
+      "text": "【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙墙空空",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "5",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n←(↓撞)",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "6",
+      "text": "【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙墙空空",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "7",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↓→↓(→撞)",
+      "view": 0,
+      "receiverConfirmed": false
+    },
+    {
+      "id": "8",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n[→啪嗒]→[↓啪嗒](→撞)",
+      "view": 1,
+      "receiverConfirmed": false
+    }
+  ],
+  "view": 2
+}

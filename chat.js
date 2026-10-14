@@ -5,10 +5,10 @@
   function viewOffset(id=activeView){const node=renderNode||team?.nodes.find(n=>n.id===id+':'+shownSegment(id)),auto=node?.verification?.status==='verified'?E.displayOffset(node.solution):{r:0,c:0,aligned:false},shift=journal.mapShifts?.[id]||{r:0,c:0};return {...auto,r:auto.r-shift.r,c:auto.c-shift.c,aligned:auto.aligned&&E.mod(shift.r,3)===0&&E.mod(shift.c,3)===0};}
   const xy=(p,id=activeView)=>{const o=viewOffset(id),n=model.config.size;return '('+(E.mod(p.r-o.r,n)+1)+', '+(E.mod(p.c-o.c,n)+1)+')';},symbols={EMPTY:'·',GRASS:'♧',WATER:'≈',PORTAL:'◎',ONEWAYPORTAL:'◉',EXIT:'↗',TRAP:'⌁',HEAT:'♨',BERRY:'❧',HEART:'♥'};
   let journal={version:2,base:E.newState(),messages:[]},built,model,replay,selected,solution,inferred=new Map(),editing=null,worker=null,generation=0,timer,phase=0;
-  let activeView=0,team=null,displayObservations=[],setup={},renderingSmart=false,possibleTerrain=new Map(),renderNode=null,renderBirth=null;
+  let activeView=0,team=null,displayObservations=[],setup={},renderingSmart=false,possibleTerrain=new Map(),renderNode=null,renderBirth=null,importMode='replace',inputReceiver=null,previewTimer,quickDraft=[];
   function settings(j=journal){const out={};for(const m of j.messages)for(const i of M.parse(m.text).items){if(i.kind==='identity')out.self=i.id;if(i.kind==='config'){if(i.values.mode)out.mode=i.values.mode;if(i.values.playerCount)out.count=i.values.playerCount;}}return out;}
   function ready(s=setup){return !!s.mode&&!!s.count&&Number.isInteger(s.self)&&s.self<s.count;}
-  function checkInput(j,text){const s=settings(j),items=M.parse(text).items;if(!ready(s)&&items.some(i=>['walls','trajectory','hear'].includes(i.kind)))throw new Error('请先填写模式、人数和自己的编号，再输入地图信息。');if(s.count&&Number.isInteger(s.self)&&s.self>=s.count)throw new Error('自己的编号必须小于玩家人数。');if(s.count&&j.messages.some(m=>M.parse(m.text).items.some(i=>(i.player!=null&&i.player>=s.count)||(['walls','hear'].includes(i.kind)&&(m.view??s.self??0)>=s.count))))throw new Error('已有信息的玩家编号超出已填写的人数，请先修正人数或对应消息。');}
+  function checkInput(j,text){const s=settings(j),items=M.parse(text).items;if(!ready(s)&&items.some(i=>['walls','trajectory','hear','firstSound'].includes(i.kind)))throw new Error('请先填写模式、人数和自己的编号，再输入地图信息。');if(s.count&&Number.isInteger(s.self)&&s.self>=s.count)throw new Error('自己的编号必须小于玩家人数。');if(s.count&&j.messages.some(m=>M.parse(m.text).items.some(i=>(i.player!=null&&i.player>=s.count)||(['walls','hear'].includes(i.kind)&&(m.view??s.self??0)>=s.count))))throw new Error('已有信息的玩家编号超出已填写的人数，请先修正人数或对应消息。');}
   const localLimits=new Map(),localExpanded=new Map(),fragmentChoices=new Map();
   function shownSegment(id=activeView){const v=built.views[id],segments=v.model.segments,choice=fragmentChoices.get(id);if(Number.isInteger(choice)&&choice>=0&&choice<segments.length)return choice;const current=v.model.active;if(E.replay(segments[current],v.model.config.size).observations.length)return current;for(let i=segments.length-1;i>=0;i--)if(E.replay(segments[i],v.model.config.size).observations.length)return i;return current;}
   function fragmentPicker(v){if(v.model.segments.length<2)return '';return `<div class="fragment-picker" aria-label="${v.id}号地图碎片">${v.model.segments.map((segment,i)=>`<button type="button" data-fragment-player="${v.id}" data-fragment="${i}" aria-pressed="${shownSegment(v.id)===i}">片段 ${i+1} · ${E.replay(segment,v.model.config.size).observations.length} 条${i===v.model.active?' · 当前':''}</button>`).join('')}</div>`;}
@@ -18,11 +18,11 @@
   function validate(raw){
     if(raw?.version===1)return {version:2,base:E.validateState(raw),messages:[]};
     if(raw?.version!==2||!Array.isArray(raw.messages)||raw.messages.length>2000||raw.messages.some(m=>typeof m.id!=='string'||typeof m.text!=='string'||m.text.length>30000||(m.view!=null&&(!Number.isInteger(m.view)||m.view<0||m.view>7))))throw new Error('消息存档格式无效。');
-    const j={version:2,base:E.validateState(raw.base),messages:raw.messages.map(m=>({id:m.id,text:m.text,...(m.view!=null?{view:m.view}:{})}))};
+    const j={version:2,base:E.validateState(raw.base),messages:raw.messages.map(m=>({id:m.id,text:m.text,...(m.view!=null?{view:m.view}:{}),...(m.receiverConfirmed===true?{receiverConfirmed:true}:{})}))};
     if(typeof raw.openingImage==='string'&&raw.openingImage.length<=1800000&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(raw.openingImage))j.openingImage=raw.openingImage;
     if(new Set(j.messages.map(m=>m.id)).size!==j.messages.length)throw new Error('存档消息标识重复。');
     j.mapShifts={};for(const [id,shift] of Object.entries(raw.mapShifts||{}))if(/^[0-7]$/.test(id)&&Number.isInteger(shift?.r)&&Number.isInteger(shift?.c)&&Math.abs(shift.r)<=10000&&Math.abs(shift.c)<=10000)j.mapShifts[id]={r:shift.r,c:shift.c};
-    j.view=Number.isInteger(raw.view)&&raw.view>=0&&raw.view<8?raw.view:0;M.build(j.base,j.messages);return j;
+    j.view=Number.isInteger(raw.view)&&raw.view>=0&&raw.view<8?raw.view:0;M.build(j.base,M.liveMessages(j.messages));return j;
   }
   try{
     const saved=localStorage.getItem(STORE),legacy=localStorage.getItem('long-night-player-notebook-v1');
@@ -32,12 +32,67 @@
   function safe(fn){return async e=>{try{await fn(e);}catch(error){toast(error.message,true);}};}
   function save(){try{localStorage.setItem(STORE,JSON.stringify(journal));$('save-status').textContent='已自动保存';}catch{$('save-status').textContent='自动保存不可用，请导出记录';}}
   async function confirm(title,text){$('confirm-title').textContent=title;$('confirm-text').textContent=text;const dialog=$('confirm-dialog');dialog.returnValue='cancel';dialog.showModal();return new Promise(resolve=>dialog.addEventListener('close',()=>resolve(dialog.returnValue==='ok'),{once:true}));}
-  function resetEditor(){editing=null;$('message-input').value='';$('send').innerHTML='发送并推理 <span>↗</span>';$('input-hint').textContent='整段粘贴即可 · Ctrl + Enter 发送';}
+  function resetEditor(){editing=null;inputReceiver=null;$('message-input').value='';$('input-preview').hidden=true;$('send').innerHTML='发送并推理 <span>↗</span>';$('input-hint').textContent='整段粘贴即可 · Ctrl + Enter 发送';}
+  function previewInput(){
+    const text=$('message-input').value.trim();$('input-preview').hidden=!text;if(!text)return;
+    try{const p=M.inspect(text),labels={walls:'墙壁',trajectory:'轨迹',hear:'方向私信',personalSound:'地形私信',firstSound:'首次发声',status:'退场状态',coins:'金币公示',feature:'特殊地形',doorCount:'按钮计数',config:'设置',identity:'身份'};
+      $('preview-type').textContent=p.type;$('preview-summary').textContent=Object.entries(p.counts).map(([k,v])=>(labels[k]||k)+' '+v+' 条').join(' · ')||'保留为笔记';
+      const receiver=setup.self??built.self;$('input-receiver').innerHTML='<option value="'+receiver+'">'+receiver+'号 · 我</option>';$('input-receiver').value=receiver;$('input-receiver').disabled=true;
+      const issues=[...p.warnings];if(p.items.some(i=>i.kind==='trajectory'&&i.player===receiver&&i.tokens.some(t=>t.direction&&!['首次','被屏蔽'].includes(t.direction))))issues.push('本人轨迹包含方向标注，可能选错了私信接收者。');
+      if(M.liveMessages([...journal.messages,{id:'preview',text,view:receiver}]).at(-1).excluded)issues.unshift('这段包含他人的专属信息，请补贴公屏版本。');
+      if(p.privateInput)issues.unshift('私聊只归给你（'+receiver+'号）；公屏轨迹按原文玩家编号归属。');$('preview-warning').textContent=issues.join(' ');
+    }catch(error){$('preview-type').textContent='输入需要修正';$('preview-summary').textContent='';$('preview-warning').textContent=error.message;}
+  }
+  $('message-input').addEventListener('input',()=>{clearTimeout(previewTimer);previewTimer=setTimeout(previewInput,120);});
+  $('input-receiver').addEventListener('change',()=>{inputReceiver=+$('input-receiver').value;previewInput();});
+  function renderQuick(){ $('quick-draft').textContent=quickDraft.join('')||'尚未记录行动'; }
+  document.querySelector('.quick-controls').addEventListener('click',event=>{const button=event.target.closest('[data-quick]');if(!button)return;const value=button.dataset.quick;
+    if(/[↑↓←→]/.test(value))quickDraft.push(value);else{const last=quickDraft.at(-1);
+      if(value==='首次'){
+        if(!last||!/^\[[↑↓←→](?:沙沙|啪嗒)\]$/.test(last)){toast('先给该步标记沙沙或啪嗒，再标记首次发声。',true);return;}
+        quickDraft[quickDraft.length-1]=last.slice(0,-1)+'(首次)]';
+      }else{if(!last||!/^[↑↓←→]$/.test(last)){toast('先选一个方向，再标记声音或撞墙。',true);return;}quickDraft[quickDraft.length-1]=value==='撞'?'('+last+'撞)':'['+last+value+']';}
+    }renderQuick();});
+  function useQuick(text){$('message-input').value=text;inputReceiver=activeView;previewInput();$('message-input').focus();}
+  const quickRound=()=>{const round=+$('quick-round').value;if(!Number.isInteger(round)||round<1||round>9999)throw new Error('速记回合应为 1–9999。');return round;};
+  $('quick-route').addEventListener('click',safe(()=>{if(!ready())throw new Error('先填写模式、人数和本人编号。');if(!quickDraft.length)throw new Error('先记录行动。');useQuick('【第 '+quickRound()+' 回合】\n['+activeView+'号]玩家本回合的完整行动轨迹：\n'+quickDraft.join(''));}));
+  $('quick-clear').addEventListener('click',()=>{quickDraft=[];renderQuick();});
+  $('quick-wall-choices').innerHTML=E.DIRS.map((name,id)=>'<label>'+name+' <select data-quick-wall="'+id+'" aria-label="速记'+name+'侧墙壁"><option>?</option><option>墙</option><option>空</option></select></label>').join('');
+  $('quick-walls').addEventListener('click',safe(()=>useQuick('【第 '+quickRound()+' 回合】\n您所在位置的四周墙壁信息：\n'+[...document.querySelectorAll('[data-quick-wall]')].map(s=>s.value).join(''))));
+  const rules=[
+    ['捕捉与顺位','默认捕捉上家。点杀开启时只在行动结束同格触发；关闭后路过也会触发。捕捉或普通逃生后跳过退场者，首轮捕捉保护会传送双方。'],
+    ['隐匿与地图片段','真实公屏轨迹中的 <隐匿行动> 或 � 表示未知移动。工具保留此前路线，并把之后路线放到新的待定位片段；隐藏方向不会自动补齐。'],
+    ['传送门与亚空间','进入传送门后任意移动两步到配对出口。亚空间内四墙为空，玩家仍在入口格；出生在门上不自动触发传送。啪嗒也可能是水洼。'],
+    ['树篱、门与撞墙','树篱的四墙反馈为空，同回合连续同方向可冲刺通过。撞击也可能来自箱子或门，不能直接画成实墙。按钮会改变关联门状态。'],
+    ['首响、心跳与静音','首次进入发声地形不通知别人方向。心脏在第1/4/7/10/13/16/19步掩盖声音，但不免除捕捉或强停风险。静音时无声箭头仍可能进入传送门；入门后的两步不按地面移动绘制。静音开关与无声区块池是不同设置。'],
+    ['金币与门公告','完整行动后单独输入金币公示、门变化公告，会关联此前完成的回合；补录历史公告请写第N回合。没有捕捉记录时，金币数量用于筛选当回合经过的未消耗金币格；同格重复经过只计一次。只说获得金币按至少1枚处理，标题金币数只表示持有量。'],
+    ['陷阱与热源','陷阱按全局进入次数奇数放行、偶数强停。本人进入任意热源后，再次进入任意热源会强停；热浪提示本身不等于踩到热源。'],
+    ['屏蔽器、小太阳与热浪','屏蔽器附近3×3隐藏方向，小太阳附近5×5产生热浪，热源附近3×3也有热浪。两种箱子都可以推动，初始区块中心不等于当前所在格。'],
+    ['候选与唯一验证','候选表示线索尚未排除的可能，数量不是概率。预算内找到一张完整地图只是存在见证；只有排除其他区块身份后才补画确定区块。10×10只做局部匹配。'],
+    ['信息可见性','仅输入公屏原文与本人私聊。点击别人的地图不改变私聊归属。旧存档中的他人私聊整段隔离，需补贴公屏版本；赛后全知地图不属于实战证据。'],
+    ['炸弹与BOSS','站在炸弹上结束行动可拆弹，经过并尝试离开会引爆；隐匿也会引爆。当前只接收部分退场信息与BOSS原文附注，未模拟完整BOSS移动。']
+  ];
+  function renderRules(){const q=$('rule-search').value.trim();$('rule-book').innerHTML=rules.filter(row=>row.join(' ').includes(q)).map(([title,text])=>'<article><h4>'+esc(title)+'</h4><p>'+esc(text)+'</p></article>').join('')||'<p>没有匹配的规则。</p>';}
+  $('rule-search').addEventListener('input',renderRules);renderRules();
+  let soundRequests=[];
+  function renderSoundChecklist(){
+    soundRequests=ready()&&!built.model.config.silent?M.soundChecklist(journal.messages):[];
+    $('sound-checklist').hidden=!soundRequests.length;$('sound-check-count').textContent=soundRequests.length+' 步';
+    $('sound-check-items').innerHTML=soundRequests.map((row,i)=>'<article><p><b>'+row.player+'号 · 第'+row.round+'回合 · 第'+row.step+'步</b> '+esc(row.state)+'</p><p>'+esc(row.prompt)+'</p><button type="button" data-sound-request="'+i+'">补贴这一步</button></article>').join('');
+  }
+  $('sound-check-items').addEventListener('click',event=>{
+    const button=event.target.closest('[data-sound-request]');if(!button)return;
+    const row=soundRequests[+button.dataset.soundRequest];$('input-hint').textContent=row.prompt;
+    if(!$('message-input').value.trim()){$('message-input').value='【第 '+row.round+' 回合】\n['+row.player+'号(第'+row.step+'步)]\n';previewInput();}
+    $('message-input').setSelectionRange($('message-input').value.length,$('message-input').value.length);
+    $('message-input').focus();
+  });
   function rebuild(scroll=false,choices={}){
+    $('block-radar').hidden=true;
     fragmentChoices.clear();setup=settings();activeView=journal.view??setup.self??0;team=null;if(worker)worker.terminate();worker=null;++generation;
-    built=M.build(journal.base,journal.messages,choices);built.resolvedChoices=choices;$('turn-advice').textContent='正在核对本轮线索与相对位置…';activeView=Math.min(activeView,built.count-1);model=built.views[activeView].model;replay=E.replay(model.segments[shownSegment()],model.config.size);selected={r:replay.r,c:replay.c};solution=null;inferred=new Map();phase=0;
-    displayObservations=replay.observations;renderMessages();renderOptions();$('setup-hint').textContent=ready()?'设置已填写 · 点击任一地图指定私信接收玩家':'请先填写模式、人数和自己的编号，或在对话框中输入这三项。';
-    if(!ready()){ $('turn-advice').textContent='请先填写人数、模式、自己的编号及本局开局区块。';$('view-tabs').innerHTML='';$('all-boards').innerHTML='<p class="setup-empty">填写模式、人数和编号后，同时展示所有玩家地图。</p>';$('map-summary').innerHTML='';$('view-hint').textContent='';$('analysis-status').textContent='等待设置';$('pairs').innerHTML='';$('pair-status').textContent='等待设置';$('reasoning').textContent='';$('candidates').innerHTML='';$('candidate-count').textContent='—';$('layout').innerHTML='';$('phase-select').innerHTML='';$('sources').innerHTML='';$('local-results').innerHTML='';$('undo').disabled=!journal.messages.length;return;}
+    built=M.build(journal.base,M.liveMessages(journal.messages),choices);built.resolvedChoices=choices;$('turn-advice').textContent='正在核对本轮线索与相对位置…';activeView=Math.min(activeView,built.count-1);model=built.views[activeView].model;replay=E.replay(model.segments[shownSegment()],model.config.size);selected={r:replay.r,c:replay.c};solution=null;inferred=new Map();phase=0;
+    displayObservations=replay.observations;renderMessages();renderOptions();renderGameStatus();renderSoundChecklist();$('setup-hint').textContent=ready()?'设置已填写 · 私聊固定归本人 · 点击地图只切换查看':'请先填写模式、人数和自己的编号，或在对话框中输入这三项。';
+    if(!ready()){ $('turn-advice').textContent='请先填写人数、模式、自己的编号及本局开局区块。';$('view-tabs').innerHTML='';$('block-radar').hidden=true;$('all-boards').innerHTML='<p class="setup-empty">填写模式、人数和编号后，同时展示所有玩家地图。</p>';$('map-summary').innerHTML='';$('view-hint').textContent='';$('analysis-status').textContent='等待设置';$('pairs').innerHTML='';$('pair-status').textContent='等待设置';$('reasoning').textContent='';$('candidates').innerHTML='';$('candidate-count').textContent='—';$('layout').innerHTML='';$('phase-select').innerHTML='';$('sources').innerHTML='';$('local-results').innerHTML='';$('undo').disabled=!journal.messages.length;return;}
     renderViews();renderBoard();renderSources();$('local-results').innerHTML='<p>先核对各玩家自己的单 / 双 / 三区块图案…</p>';$('pairs').innerHTML='<p>每次输入、修改或撤销后，自动重算全部视角。</p>';$('pair-status').textContent='计算中';
     $('undo').disabled=!journal.messages.length;
     if(!model.config.pool.trim()){
@@ -46,23 +101,18 @@
       $('local-results').textContent='等待本局区块池，尚未枚举候选。';$('pairs').textContent='填写开局区块后再进行两两拼接。';$('pair-status').textContent='等待区块池';$('reasoning').textContent='';$('candidate-count').textContent='—';$('candidates').innerHTML='';$('layout').innerHTML='';$('phase-select').innerHTML='';return;
     }
     $('analysis-status').textContent='推理中';$('reasoning').innerHTML='<p>正在把新消息与已有线索交叉核对…</p>';$('candidate-count').textContent='…';$('candidates').innerHTML='';$('layout').innerHTML='';$('phase-select').innerHTML='';
-    const previousViews=new Map(),historyViews=new Map();
-    for(let k=0;k<journal.messages.length;k++)for(const item of M.parse(journal.messages[k].text).items)if(item.kind==='trajectory'){
-      const old=M.build(journal.base,journal.messages.slice(0,k)).views[item.player];
-      previousViews.set(item.player,old);if(!historyViews.has(item.player))historyViews.set(item.player,[]);historyViews.get(item.player).push(old);
-    }
-    const nodes=built.views.flatMap(v=>v.model.segments.map((segment,i)=>({id:v.id+':'+i,player:v.id,segment:i,histories:[...(historyViews.get(v.id)||[]).filter(old=>old.model.active===i).map(old=>{const segment=old.model.segments[i],r=E.replay(segment,model.config.size);return {observations:r.observations,anchors:segment.anchors,focus:{r:r.r,c:r.c},birth:i===0?{r:Math.floor(model.config.size/2),c:Math.floor(model.config.size/2)}:null};}),...window.LongNightLocal.routeHistories(segment,model.config.size,i===0?{r:Math.floor(model.config.size/2),c:Math.floor(model.config.size/2)}:null)],previous:(()=>{const old=previousViews.get(v.id);if(!old||old.model.active!==i)return null;const segment=old.model.segments[i],r=E.replay(segment,model.config.size);return {observations:r.observations,anchors:segment.anchors,focus:{r:r.r,c:r.c}};})(),birth:i===0?{r:Math.floor(model.config.size/2),c:Math.floor(model.config.size/2)}:null,observations:E.replay(segment,model.config.size).observations,anchors:segment.anchors,focus:(()=>{const at=E.replay(segment,model.config.size);return {r:at.r,c:at.c};})()})).filter(node=>node.segment===v.model.active||node.observations.length));
-    const request={id:++generation,config:model.config,nodes,notebook:{base:journal.base,messages:journal.messages,self:built.self,count:built.count,choices},relations:built.relations.filter(h=>!['首次','被屏蔽'].includes(h.direction))};
+    const nodes=window.LongNightLocal.nodes(built);
+    const request={id:++generation,config:model.config,nodes,notebook:{base:journal.base,messages:M.liveMessages(journal.messages),self:built.self,count:built.count,choices},relations:built.relations.filter(h=>!['首次','被屏蔽'].includes(h.direction))};
     if(worker)worker.terminate();worker=null;
     if(location.protocol!=='file:')try{worker=new Worker('worker.js');worker.onmessage=e=>receive(e.data);worker.onerror=()=>{worker.terminate();worker=null;receive({id:request.id,error:'后台推理失败，请刷新后重试。'});};}catch{}
-    if(worker)worker.postMessage(request);else setTimeout(()=>{try{const hypotheses=window.LongNightHypotheses.all(request.config,request.notebook),resolved=hypotheses.filter(h=>h.resolvedChoices);if(resolved.length){receive({id:request.id,resolvedChoices:{...choices,...Object.fromEntries(resolved.map(h=>[h.player,h.resolvedChoices]))}});return;}const result=window.LongNightTeam.solve(request.config,request.nodes,request.relations,local=>receive({id:request.id,local}),progress=>receive({id:request.id,progress}));result.hypotheses=hypotheses;receive({id:request.id,team:result});}catch(error){receive({id:request.id,error:error.message});}},0);
+    if(worker)worker.postMessage(request);else setTimeout(()=>{try{const hypotheses=window.LongNightHypotheses.all(request.config,request.notebook),resolved=window.LongNightHypotheses.choiceUpdates(hypotheses,choices);if(resolved){receive({id:request.id,resolvedChoices:resolved});return;}const result=window.LongNightTeam.solve(request.config,request.nodes,request.relations,local=>receive({id:request.id,local}),progress=>receive({id:request.id,progress}));result.hypotheses=hypotheses;receive({id:request.id,team:result});}catch(error){receive({id:request.id,error:error.message});}},0);
     if(scroll)$('messages').scrollTop=$('messages').scrollHeight;
   }
   function receive(data){
     if(data.id!==generation)return;
     if(data.progress){
       const p=data.progress;
-      $('analysis-status').textContent=p.stage==='hypotheses'?'核对啪嗒的水洼 / 传送门分支':p.stage==='perspectives'?`核对${p.player}号路线、声音、墙壁与完整地图`:p.stage==='local'?`匹配${p.player}号当前路线的局部区块组合`:p.stage==='pairs'?`对齐${p.a}号与${p.b}号 · 已检查 ${p.checked}/${p.total} 个平移位置`:p.enumerating?`地图推理已完成 · 枚举${p.player}号历史三区块 · 搜索 ${p.searchSteps} 次 · 找到 ${p.found} 个组合`:`地图推理已完成 · 核对${p.player}号历史三区块 · 已验证 ${p.checks} 个方案 · 保留 ${p.kept} 个`;
+      $('analysis-status').textContent=p.stage==='hypotheses'?'核对声音 / 静音移动的地面与传送门分支':p.stage==='perspectives'?`核对${p.player}号路线、声音、墙壁与完整地图`:p.stage==='local'?`匹配${p.player}号当前路线的局部区块组合`:p.stage==='pairs'?`对齐${p.a}号与${p.b}号 · 已检查 ${p.checked}/${p.total} 个平移位置`:p.enumerating?`地图推理已完成 · 枚举${p.player}号历史三区块 · 搜索 ${p.searchSteps} 次 · 找到 ${p.found} 个组合`:`地图推理已完成 · 核对${p.player}号历史三区块 · 已验证 ${p.checks} 个方案 · 保留 ${p.kept} 个`;
       return;
     }
     if(data.resolvedChoices){rebuild(false,data.resolvedChoices);return;}
@@ -79,6 +129,17 @@
     }
     renderPairs();$('analysis-status').textContent=team.nodes.some(n=>n.local?.triplesPending)?'地图推理已完成 · 部分历史方案的整图验证待定':'推理已完成';
   }
+  function renderGameStatus(){
+    const panel=$('game-status');panel.hidden=!ready();if(!ready()){panel.textContent='';return;}
+    const rows=window.LongNightAdvice.status(built),me=rows[built.self];
+    panel.innerHTML='<h3>对局状态 · '+rows.filter(p=>p.alive).length+'/'+built.count+' 人未记录退场</h3><p>'+(!me.alive?'你'+esc(me.reason):me.target==null?'暂无捕捉目标':'你追捕 '+me.target+' 号 · '+me.hunter+' 号追捕你')+'</p><div class="status-players">'+rows.map(p=>'<button type="button" data-status-view="'+p.id+'" class="'+(p.alive?'':'retired')+'"><b>'+p.id+'号'+(p.id===built.self?' · 我':'')+'</b><span>'+esc(p.alive?(p.target==null?'暂无目标':'目标 '+p.target+'号'):p.reason)+'</span><small>已录入至第 '+p.round+' 回合'+(p.coins!=null?' · 上次公示金币 '+p.coins:'')+(p.pending.length?' · 待补轨迹 '+p.pending.join('、')+' 回合':'')+'</small></button>').join('')+'</div><small>根据已录入记录更新；点击玩家切换地图；私聊始终归本人。</small>';
+  }
+  function renderRadar(){
+    const panel=$('block-radar');if(!ready()){panel.hidden=true;return;}
+    const radar=window.LongNightAdvice.radar(built,team,activeView);panel.hidden=!radar;if(!radar){panel.textContent='';return;}
+    panel.innerHTML='<h3>'+activeView+'号 · 当前位置区块雷达</h3><p>'+ (radar.verified?'唯一性验证：'+esc(radar.verified)+'「'+esc(E.byId.get(radar.verified).name)+'」':radar.ids.length+' 种候选'+(radar.gap?'，另有区块外道路可能':''))+'</p><div class="radar-blocks">'+radar.ids.slice(0,16).map(id=>'<span>'+esc(id)+' · '+esc(E.byId.get(id).name)+'</span>').join('')+'</div><small>'+(radar.ids.length>16?'另有 '+(radar.ids.length-16)+' 种，详见区块候选。 ':'')+'候选数量不代表概率；仅描述当前片段，待定位片段之间未强行连接。</small>';
+  }
+  $('game-status').addEventListener('click',event=>{const button=event.target.closest('[data-status-view]');if(!button)return;activeView=+button.dataset.statusView;journal.view=activeView;save();activateView();});
   function renderViews(){
     $('view-tabs').innerHTML=built.views.map(v=>`<button type="button" data-view="${v.id}" aria-pressed="${v.id===activeView}">${v.id}号${v.id===built.self?' · 我':''}<small>${v.model.segments.reduce((sum,s)=>sum+E.replay(s,model.config.size).observations.length,0)} 条线索</small></button>`).join('');
     $('view-hint').textContent=`所有视角同时展示 · 当前输入的私信属于 ${activeView} 号`;
@@ -86,21 +147,22 @@
   function activateView(){
     model=built.views[activeView].model;replay=E.replay(model.segments[shownSegment()],model.config.size);selected={r:replay.r,c:replay.c};phase=0;
     const node=team?.nodes.find(n=>n.id===activeView+':'+shownSegment());solution=node?.solution;displayObservations=node?.mergedObservations||replay.observations;inferred=solution?E.inferredTerrain(solution,model.config.size):new Map();
-    renderViews();renderBoard();renderSources();if(solution){renderResult();renderLayout();}
+    renderViews();renderBoard();renderSources();renderRadar();if($('message-input').value.trim())previewInput();if(solution){renderResult();renderLayout();}
   }
   function renderPairs(){}
   $('view-tabs').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(!button)return;activeView=+button.dataset.view;journal.view=activeView;save();activateView();});
 
   function renderMessages(){
+    const live=M.liveMessages(journal.messages);
     const intro=migration?'<div class="empty"><p>旧版记录已保留为对局基础。</p><small>现在开始，每次粘贴都能整段撤销。若要重新录入开局，可在右上角新建对局。</small></div>':'';
     $('messages').innerHTML=intro+(journal.messages.length?journal.messages.map((m,i)=>{
-      const report=built.reports[i];
-      return `<article class="message" data-message="${esc(m.id)}"><div class="message-header"><span>输入 ${i+1} · ${m.view??built.self}号视角</span><button data-edit="${esc(m.id)}">编辑</button><button data-remove="${esc(m.id)}">撤销这段</button></div><pre class="message-raw">${esc(m.text)}</pre><div class="reply">${report.summary.map(s=>`<p>${esc(s)}</p>`).join('')}${report.warnings.map(s=>`<p class="warning">${esc(s)}</p>`).join('')}</div></article>`;
-    }).join(''):'<div class="empty"><p>先贴一条开局墙壁私信就好。</p><small>之后继续贴完整行动轨迹，我会自动记录经过的格子与声响。先填写必填设置；点击右侧玩家地图后，再粘贴该玩家的私信。公开轨迹自动按编号分配。</small></div>');
+      const report=built.reports[i],excluded=live[i].excluded;
+      return `<article class="message" data-message="${esc(m.id)}"><div class="message-header"><span>输入 ${i+1} · ${excluded?'已隔离':M.inspect(m.text).privateInput?'本人私聊':'公屏 / 设置'}</span><button data-edit="${esc(m.id)}">编辑</button><button data-remove="${esc(m.id)}">撤销这段</button></div><pre class="message-raw">${esc(m.text)}</pre><div class="reply">${excluded?'<p class="warning">已隔离：含他人私聊或赛后专属信息，请补贴公屏版本。原文保留但不参与实战推理。</p>':''}${report.summary.map(s=>`<p>${esc(s)}</p>`).join('')}${report.warnings.map(s=>`<p class="warning">${esc(s)}</p>`).join('')}</div></article>`;
+    }).join(''):'<div class="empty"><p>先贴一条开局墙壁私信就好。</p><small>之后继续贴完整行动轨迹，我会自动记录经过的格子与声响。先填写必填设置；私聊固定归本人，点击地图只切换查看。公开轨迹自动按编号分配。</small></div>');
   }
   function renderBoard(){
     const saved={activeView,model,replay,selected,inferred,displayObservations,possibleTerrain};
-    $('all-boards').innerHTML=built.views.map(v=>`<section class="player-map ${v.id===activeView?'active-map':''}" data-map-view="${v.id}"><h3>${v.id}号视角${v.id===built.self?' · 自己':''}<small>${v.id===activeView?'接收当前私信':'点击选择私信接收者'}</small></h3>${mapShiftControls(v.id)}${fragmentPicker(v)}<div class="board-wrap"><div class="board" id="board-${v.id}" aria-label="${v.id}号相对地图"></div></div><p id="summary-${v.id}" class="map-footnote"></p></section>`).join('');
+    $('all-boards').innerHTML=built.views.map(v=>`<section class="player-map ${v.id===activeView?'active-map':''}" data-map-view="${v.id}"><h3>${v.id}号视角${v.id===built.self?' · 自己':''}<small>${v.id===built.self?'公屏 + 本人私聊':'公屏线索'}</small></h3>${mapShiftControls(v.id)}${fragmentPicker(v)}<div class="board-wrap"><div class="board" id="board-${v.id}" aria-label="${v.id}号相对地图"></div></div><p id="summary-${v.id}" class="map-footnote"></p></section>`).join('');
     for(const v of built.views){activeView=v.id;model=v.model;replay=E.replay(model.segments[shownSegment()],model.config.size);const node=team?.nodes.find(n=>n.id===v.id+':'+shownSegment(v.id));displayObservations=node?.mergedObservations||replay.observations;inferred=node?confirmedTerrain(node):new Map();possibleTerrain=new Map();renderingSmart=!!node;selected=v.id===saved.activeView?saved.selected:{r:-1,c:-1};renderSingleBoard($('board-'+v.id));const routes=new Set(v.roundEnds.map(end=>end.round)).size;const total=model.segments.reduce((sum,s)=>sum+E.replay(s,model.config.size).observations.length,0),historical=shownSegment(v.id)!==model.active;$('summary-'+v.id).textContent=`已识别 ${routes} 回合轨迹 · 共保存 ${total} 条线索 · 此片段 ${replay.observations.length} 条 · ${v.id}号${historical?'此前最后已知位置':'位置'} ${xy(replay)}${model.segments.length>1?' · 片段 '+(shownSegment(v.id)+1):''}${historical?' · 当前片段尚未定位':''}${viewOffset().aligned?' · 区块边界已对齐（3×3）':''}`;}
     for(const v of built.views){const node=team?.nodes.find(n=>n.id===v.id+':'+shownSegment(v.id));if(node?.advice?.length)$('summary-'+v.id).insertAdjacentHTML('afterend','<div class="perspective-advice" aria-label="'+v.id+'号推理结论"><h4>'+v.id+'号 · 推理结论与区分线索</h4>'+node.advice.map(t=>'<p>'+esc(t)+'</p>').join('')+'</div>');}
     for(const v of built.views){const known=team?.nodes.find(n=>n.id===v.id+':'+shownSegment(v.id))?.verification?.blocks||[];if(known.length)$('summary-'+v.id).textContent+=' · 已补齐确定区块：'+known.map(b=>b.id+'（'+E.byId.get(b.id).name+'）').join('、');}
@@ -163,19 +225,26 @@
         if(!connected)$('summary-'+activeView).textContent='上图截至进入传送门；下方'+(alternatives?alternatives.length+'个完整候选图':'出口视角')+'保留后续路线、声音与撞墙，尚未唯一的方案分别展示。';
         continue;
       }
-      host.insertAdjacentHTML('beforeend','<details class="hypothesis-details"><summary>'+(hypothesis.confirmedPortal?'已确定进入传送门 · 展开出口候选':'展开'+(hypothesis.maskedUnknown?'心跳掩盖步':'啪嗒')+'的两种假设')+'</summary><div class="hypothesis-content"></div></details>');
+      const facts=window.LongNightAdvice.hypothesis(hypothesis);
+      host.insertAdjacentHTML('beforeend','<details class="hypothesis-details"><summary>'+(hypothesis.confirmedPortal?'已确定进入传送门 · 展开出口候选':'展开'+(hypothesis.silentUnknown?'静音移动':hypothesis.maskedUnknown?'心跳掩盖步':hypothesis.recoveryUnknown?'补充入口':'啪嗒')+'的分支推理与完整候选图')+'</summary><div class="hypothesis-content">'+facts.map(line=>'<p class="hypothesis-fact">'+esc(line)+'</p>').join('')+'</div></details>');
       const container=host.querySelector('.hypothesis-content');
       for(const group of hypothesis.groups){
-        const name=group.kind==='ground'?'未进入传送门假设':'进入传送门假设',id='hypothesis-board-'+activeView+'-'+group.kind;
+        const name='第 '+hypothesis.round+' 回合第 '+hypothesis.step+' 步'+(group.kind==='ground'?'未入门假设':'入门假设');
         if(group.excluded){container.insertAdjacentHTML('beforeend','<section class="hypothesis-excluded"><b>'+activeView+'号 · '+name+'：已排除</b><p>'+esc(group.reasons.join('；')||'没有符合全部线索的区块方案')+'</p></section>');continue;}
-        renderNode={id:activeView+':'+hypothesis.segment,solution:group.solution,verification:group.verification,joined:[]};renderBirth=hypothesis.segment===0;
-        const positions=group.positions.filter(p=>!p.inSpace),single=positions.length===1&&!group.inSpace?positions[0]:{r:-1,c:-1};
-        replay={...single,trace:group.trace,observations:group.observations};displayObservations=group.observations;renderingSmart=true;inferred=confirmedTerrain(renderNode);possibleTerrain=new Map();selected={r:-1,c:-1};
-        const note=group.kind==='ground'?(hypothesis.maskedUnknown?'心跳掩盖了可能的声音；此分支按未进入传送门继续走地面路线。':'按未触发传送继续走地面路线；啪嗒地形仍由区块和后续线索判断。'):'进入后任意移动两步，从同区块配对出口出现；亚空间方向不画成地面路线。';
-        const status=group.inSpace?'仍可能在亚空间，剩余 '+group.remaining.join(' / ')+' 步；入口仅作定位参照。':positions.length>1?'当前位置有 '+positions.length+' 种可能，红色问号为候选位置。':positions.length?'已按此假设推演后续位置。':'后续位置已进入另一个待定位片段。';
-        container.insertAdjacentHTML('beforeend','<section class="player-map smart-map hypothesis-map" data-hypothesis="'+group.kind+'" data-map-view="'+activeView+'"><h3>'+activeView+'号 · '+name+'<small>第 '+hypothesis.round+' 回合第 '+hypothesis.step+' 步'+(hypothesis.maskedUnknown?'心跳掩盖':'啪嗒')+' · 条件假设</small></h3><div class="board-wrap"><div class="board" id="'+id+'" aria-label="'+activeView+'号'+name+'"></div></div><p class="map-footnote">'+note+status+(group.pending?' 后续分支尚未穷举，保留待验证。':'')+'</p></section>');
+        const drawings=group.alternatives?.length?group.alternatives:[group];
+        for(const [variant,drawing] of drawings.entries()){
+        const id='hypothesis-board-'+activeView+'-'+group.kind+(variant?'-'+variant:'');
+        renderNode={id:activeView+':'+hypothesis.segment,solution:drawing.solution,verification:drawing.verification,joined:[]};renderBirth=hypothesis.segment===0;
+        const positions=drawing.positions.filter(p=>!p.inSpace),single=positions.length===1&&!drawing.inSpace?positions[0]:{r:-1,c:-1};
+        replay={...single,trace:drawing.trace,observations:drawing.observations};displayObservations=drawing.observations;renderingSmart=true;inferred=confirmedTerrain(renderNode);possibleTerrain=new Map();selected={r:-1,c:-1};
+        const note=group.kind==='ground'?'本假设只表示所标注的这一步未入门；后续仍可能进入传送门，按后续行动逐步验证。':'所标注的这一步入门，之后任意移动两步从配对出口出现；亚空间方向不画成地面路线。';
+        const status=drawing.inSpace?'仍可能在亚空间，剩余 '+drawing.remaining.join(' / ')+' 步；入口仅作定位参照。':positions.length>1?'当前位置有 '+positions.length+' 种可能，红色问号为候选位置。':positions.length?'已按此假设推演后续位置。':'后续位置已进入另一个待定位片段。';
+        const blocks=drawing.verification.status==='verified'?drawing.verification.blocks:[];
+        const detail=(drawing.entryBlocks?.length?' 此方案的入口区块候选：'+drawing.entryBlocks.join(' / ')+'。':'')+(blocks.length?' 此条件下锁定区块：'+blocks.map(b=>b.id+'「'+E.byId.get(b.id).name+'」').join('、')+'，已补画。':'');
+        container.insertAdjacentHTML('beforeend','<section class="player-map smart-map hypothesis-map" data-hypothesis="'+group.kind+'" data-map-view="'+activeView+'"><h3>'+activeView+'号 · '+name+(drawings.length>1?' · 方案 '+(variant+1)+' / '+drawings.length:'')+'<small>第 '+hypothesis.round+' 回合第 '+hypothesis.step+' 步'+(hypothesis.silentUnknown?'静音移动':hypothesis.maskedUnknown?'心跳掩盖':hypothesis.recoveryUnknown?'补充入口':'啪嗒')+' · 条件假设</small></h3><div class="board-wrap"><div class="board" id="'+id+'" aria-label="'+activeView+'号'+name+'"></div></div><p class="map-footnote">'+esc(note+status+detail)+(drawing.pending?' 后续分支尚未穷举，保留待验证。':'')+'</p></section>');
         const board=$(id);renderSingleBoard(board);
         if(positions.length>1)for(const p of positions)board.querySelector('[data-r="'+p.r+'"][data-c="'+p.c+'"]').insertAdjacentHTML('beforeend','<span class="other-players current-marker" title="此假设下的可能位置">'+activeView+'?</span>');
+        }
       }
     }
     renderNode=null;renderBirth=null;
@@ -262,6 +331,7 @@
   }
   function renderOptions(){
     $('player-count').value=setup.count??'';$('game-mode').value=setup.mode??'';$('self-id').innerHTML='<option value="" disabled>请选择编号</option>'+Array.from({length:setup.count||0},(_,id)=>`<option value="${id}">${id}号</option>`).join('');$('self-id').value=setup.self??'';$('self-id').disabled=!setup.count;$('game-size').value=model.config.size;
+    $('capture-target').value=model.config.captureTarget||model.target||'PREVIOUS';$('special-event').value=model.config.event;$('silent-mode').checked=!!model.config.silent;$('brawl-mode').checked=!!model.config.brawl;$('point-capture').checked=model.config.pointCapture!==false;
     draftBlocks=new Set(model.config.pool.trim().split(/\s+/).filter(Boolean));
     $('pool-count').textContent=setup.mode?model.config.pool?`已录入 ${draftBlocks.size} 个候选编号`:'必填 · 尚未录入':'先选择模式';
     $('pool-count').title='填写本局开局图片中实际公布的区块；仅选择模式不能确定本局区块池。';
@@ -278,8 +348,11 @@
     $('draft-count').textContent=`已选 ${draftBlocks.size} 个`;
   }
   function addSetting(text){
-    const next=E.clone(journal);next.messages.push({id:globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),text,view:activeView});if(!ready()&&ready(settings(next))){next.view=settings(next).self;next.messages.at(-1).view=next.view;}try{checkInput(next,text);}catch(error){renderOptions();throw error;}M.build(next.base,next.messages);journal=next;save();rebuild(true);
+    const next=E.clone(journal);next.messages.push({id:globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),text,view:activeView});if(!ready()&&ready(settings(next))){next.view=settings(next).self;next.messages.at(-1).view=next.view;}try{checkInput(next,text);}catch(error){renderOptions();throw error;}M.build(next.base,M.liveMessages(next.messages));journal=next;save();rebuild(true);
   }
+  $('capture-target').addEventListener('change',safe(()=>addSetting('捕捉目标：'+($('capture-target').value==='NEXT'?'下家':'上家'))));
+  $('special-event').addEventListener('change',safe(()=>addSetting('特殊事件：'+$('special-event').selectedOptions[0].textContent)));
+  for(const [id,label] of [['silent-mode','静音'],['brawl-mode','大乱斗'],['point-capture','点杀']])$(id).addEventListener('change',safe(()=>addSetting(label+($(id).checked?'开启':'关闭'))));
   $('self-id').addEventListener('change',safe(()=>{if($('self-id').value==='')return;addSetting('我是'+$('self-id').value+'号');}));
   $('player-count').addEventListener('change',safe(()=>{if($('player-count').value)addSetting('玩家人数：'+$('player-count').value);}));
   $('game-mode').addEventListener('change',safe(()=>{if($('game-mode').value)addSetting('模式'+modeNames[$('game-mode').value]+'\n区块池：默认');}));
@@ -302,30 +375,36 @@
   $('remove-opening-image').addEventListener('click',()=>{delete journal.openingImage;save();$('opening-image-preview').removeAttribute('src');$('opening-image-preview').hidden=true;$('remove-opening-image').hidden=true;});
   $('message-form').addEventListener('submit',safe(event=>{
     event.preventDefault();const text=$('message-input').value.trim();if(!text)throw new Error('请粘贴一段机器人消息。');
-    const next=E.clone(journal);
-    if(editing){const item=next.messages.find(m=>m.id===editing);if(!item)throw new Error('这段输入已被撤销。');item.text=text;item.view=activeView;}
+    const next=E.clone(journal),receiver=setup.self??built.self;
+    if(editing){const item=next.messages.find(m=>m.id===editing);if(!item)throw new Error('这段输入已被撤销。');item.text=text;item.view=receiver;item.receiverConfirmed=true;}
     else{
       if(next.messages.length>=2000)throw new Error('本对局消息已达上限，请导出存档并开启新对局。');
       if(/完整行动轨迹/.test(text)&&next.messages.some(m=>M.clean(m.text)===M.clean(text)))throw new Error('这段完整轨迹已输入过。若确实是另一个回合，请在开头加上「【第 2 回合】」等回合标记。');
-      next.messages.push({id:globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),text,view:activeView});
+      next.messages.push({id:globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),text,view:receiver,receiverConfirmed:true});
     }
     if(!ready()&&ready(settings(next))){next.view=settings(next).self;next.messages.at(-1).view=next.view;}
-    const parsedInput=M.parse(text),routeOwners=new Set(parsedInput.items.filter(item=>item.kind==='trajectory').map(item=>item.player)),currentMessage=editing?next.messages.find(m=>m.id===editing):next.messages.at(-1);if(parsedInput.snapshot||routeOwners.size>1){next.view=settings(next).self;currentMessage.view=next.view;}else if(routeOwners.size===1)next.view=[...routeOwners][0];else if(parsedInput.items.some(i=>i.kind==='hear')){currentMessage.view=M.receiverFor(currentMessage,parsedInput,settings(next).self);next.view=currentMessage.view;}
-    try{checkInput(next,text);}catch(error){renderOptions();throw error;}M.build(next.base,next.messages);journal=next;resetEditor();save();rebuild(true);$('message-input').focus();
+    const currentMessage=editing?next.messages.find(m=>m.id===editing):next.messages.at(-1);
+    if(M.liveMessages(next.messages).find(m=>m.id===currentMessage.id)?.excluded)throw new Error('这段含他人的专属地形或心跳掩盖详情，请粘贴公屏原文或你自己的私聊版本。');
+
+    try{checkInput(next,text);}catch(error){renderOptions();throw error;}M.build(next.base,M.liveMessages(next.messages));journal=next;resetEditor();save();rebuild(true);$('message-input').focus();
   }));
   $('message-input').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();$('message-form').requestSubmit();}if(e.key==='Escape'&&editing)resetEditor();});
   $('undo').addEventListener('click',()=>{journal.messages.pop();resetEditor();save();rebuild(true);});
   $('messages').addEventListener('click',safe(event=>{
     const edit=event.target.closest('[data-edit]'),remove=event.target.closest('[data-remove]');
-    if(edit){const item=journal.messages.find(m=>m.id===edit.dataset.edit);editing=item.id;activeView=Math.min(item.view??built.self,built.count-1);journal.view=activeView;activateView();$('message-input').value=item.text;$('send').textContent='保存修改';$('input-hint').textContent='正在编辑 · 可切换玩家修正接收视角 · Esc 取消';$('message-input').focus();}
+    if(edit){const item=journal.messages.find(m=>m.id===edit.dataset.edit);editing=item.id;inputReceiver=null;activeView=Math.min(item.view??built.self,built.count-1);journal.view=activeView;activateView();$('message-input').value=item.text;previewInput();$('send').textContent='保存修改';$('input-hint').textContent='正在编辑 · 私聊固定归本人 · Esc 取消';$('message-input').focus();}
     if(remove){journal.messages=journal.messages.filter(m=>m.id!==remove.dataset.remove);resetEditor();save();rebuild();toast('已撤销整段文字，并重算后续线索。');}
   }));
   $('all-boards').addEventListener('click',event=>{if(event.target.closest('.hypothesis-details summary,.player-local'))return;const shift=event.target.closest('[data-shift-player]');if(shift){const id=+shift.dataset.shiftPlayer,n=model.config.size; journal.mapShifts??={};const old=journal.mapShifts[id]||{r:0,c:0};if(shift.dataset.shiftDir==='reset')delete journal.mapShifts[id];else{const [dr,dc]=E.V[+shift.dataset.shiftDir];journal.mapShifts[id]={r:E.mod(old.r+dr,n),c:E.mod(old.c+dc,n)};}save();renderBoard();renderSources();if(solution)renderResult();if(team)renderLocal();return;}const card=event.target.closest('[data-map-view]');if(!card)return;const pick=event.target.closest('[data-fragment]');if(pick)fragmentChoices.set(+pick.dataset.fragmentPlayer,+pick.dataset.fragment);activeView=+card.dataset.mapView;journal.view=activeView;save();const cell=event.target.closest('.portal-after-view')?null:event.target.closest('[data-r]');activateView();if(team)renderLocal();if(cell){selected={r:+cell.dataset.r,c:+cell.dataset.c};renderBoard();if(solution)renderResult();}});
   $('phase-select').addEventListener('change',()=>{phase=+$('phase-select').value;renderLayout();});
   $('export').addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(journal,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='长夜消息存档.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-  $('import').addEventListener('click',()=>$('import-file').click());
-  $('import-file').addEventListener('change',safe(async()=>{const file=$('import-file').files[0];$('import-file').value='';if(!file)return;if(file.size>6*1024*1024)throw new Error('存档超过 6 MB。');const next=validate(JSON.parse(await file.text()));if(!await confirm('载入存档？','当前对局将被替换；如需保留，请先导出。'))return;journal=next;migration=false;resetEditor();save();rebuild();}));
-  function resetGame(){localExpanded.clear();localLimits.clear();journal={version:2,base:E.newState(),messages:[]};migration=false;resetEditor();save();rebuild();document.querySelector('.menu').open=false;toast('已重置，请重新填写模式、人数、编号及开局区块。');}
+  $('import').addEventListener('click',()=>{importMode='replace';$('import-file').click();});
+  $('merge-import').remove();
+  $('import-file').addEventListener('change',safe(async()=>{const file=$('import-file').files[0];$('import-file').value='';if(!file)return;if(file.size>6*1024*1024)throw new Error('存档超过 6 MB。');const next=validate(JSON.parse(await file.text()));
+    if(importMode==='merge'){const result=window.LongNightJournal.merge(journal,next);if(!result.added){toast('没有新记录，已跳过 '+result.duplicates+' 条重复消息。');return;}journal=result.journal;toast('合并了 '+result.added+' 条消息，跳过 '+result.duplicates+' 条重复消息。');}
+    else{if(!await confirm('载入存档？','当前对局将被替换；如需保留，请先导出。'))return;journal=next;}
+    migration=false;resetEditor();save();rebuild();}));
+  function resetGame(){localExpanded.clear();localLimits.clear();quickDraft=[];renderQuick();journal={version:2,base:E.newState(),messages:[]};migration=false;resetEditor();save();rebuild();document.querySelector('.menu').open=false;toast('已重置，请重新填写模式、人数、编号及开局区块。');}
   $('reset-game').addEventListener('click',resetGame);$('new-game').addEventListener('click',resetGame);
   rebuild();if(loadError)toast(loadError,true);
 })();

@@ -156,7 +156,16 @@
   return {...local,historyPending:false,fullRouteTriples:exhaustive.triples.length,triples:[...triples.values()],triplesPending:pending};
  }
  function routeHistories(segment,n,birth=null){
+  const rounds=[...new Set(segment.events.filter(e=>e.clock).map(e=>e.clock.round))].sort((a,b)=>a-b);
+  if(rounds.length)return rounds.map(round=>{const at=E.replay({...segment,events:segment.events.filter(e=>!e.clock||e.clock.round<=round)},n);return {observations:at.observations,focus:{r:at.r,c:at.c},anchors:segment.anchors,birth,round};});
   return segment.events.flatMap((e,i)=>{if(e.kind!=='turn')return [];const at=E.replay({...segment,events:segment.events.slice(0,i+1)},n);return [{observations:at.observations,focus:{r:at.r,c:at.c},anchors:segment.anchors,birth}];});
  }
- const api={routeHistories,preserveTriples,retainedSingles,retained,analyze,seam,inside,pairSupported,groupSupported,dependency};if(typeof module!=='undefined')module.exports=api;else root.LongNightLocal=api;
+ function nodes(built){
+  const n=built.model.config.size,middle=Math.floor(n/2);
+  return built.views.flatMap(v=>v.model.segments.map((segment,i)=>{
+   const at=E.replay(segment,n),birth=i===0?{r:middle,c:middle}:null,histories=routeHistories(segment,n,birth);
+   return {id:v.id+':'+i,player:v.id,segment:i,histories,previous:histories.filter(h=>h.observations.length<at.observations.length).at(-1)||null,birth,observations:at.observations,anchors:segment.anchors,focus:{r:at.r,c:at.c}};
+  }).filter(node=>node.segment===v.model.active||node.observations.length));
+ }
+ const api={nodes,routeHistories,preserveTriples,retainedSingles,retained,analyze,seam,inside,pairSupported,groupSupported,dependency};if(typeof module!=='undefined')module.exports=api;else root.LongNightLocal=api;
 })(globalThis);

@@ -9,7 +9,8 @@ test('latest two-round player 2 save has one block phase but three supported gra
  const p=solution.phases[0],k=p.slots.findIndex(o=>o.r===8&&o.c===5);
  assert.deepEqual(p.domains[k].map(m=>m.id),['6','7','32']);
  for(const m of p.domains[k])assert.equal(E.verifyCompleteLayout(v.model.config,{...solution,phases:[{...p,domains:p.domains.map((d,i)=>i===k?[m]:d)}]},replay.observations,2000).status,'verified');
- const lines=A.perspective(built,{nodes:[node]},2);
+ const lines=A.perspective({...built,self:2},{nodes:[node]},2);
+ assert(!A.perspective({...built,self:0},{nodes:[node]},2).some(x=>x.includes('区分线索：')),'only ask for own private walls');
  assert(lines.some(x=>x.includes('第2回合第2步')&&x.includes('只剩3种')&&x.includes('空间裂隙')));
  assert(lines.some(x=>x.includes('第2回合第2步')&&x.includes('左侧')&&x.includes('若为空，候选缩为7')));
  assert(lines.some(x=>x.includes('第2回合第3步')&&x.includes('左侧')&&x.includes('若为空，候选缩为32')));

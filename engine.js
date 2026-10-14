@@ -78,7 +78,17 @@
     function addObservation(e,row,col,index){
       if(e.walls) observations.push({r:row,c:col,kind:'walls',value:parseWalls(e.walls),index});
       if(e.terrain) observations.push({r:row,c:col,kind:'terrain',value:e.terrain,index});
-      if(e.kind==='move'&&e.outcome==='move'&&e.quiet)observations.push({r:row,c:col,kind:'quiet',index});
+      if(e.kind==='move'&&e.outcome==='move'&&e.quiet){
+        // A silent trap entry ends the turn before another move, including a collision.
+        // Inspect the whole segment so cutting observations to a local block cannot lose this evidence.
+        let continues=false;
+        for(let j=index+1;j<segment.events.length;j++){
+          const next=segment.events[j];
+          if(next.kind==='turn'||(e.clock&&next.clock&&(e.clock.round!==next.clock.round||e.clock.player!==next.clock.player)))break;
+          if(next.kind==='move'||next.kind==='teleport'){continues=true;break;}
+        }
+        observations.push({r:row,c:col,kind:'quiet',index,continues});
+      }
       if(e.nonPortalSound)observations.push({r:row,c:col,kind:'nonPortalSound',index});
       if(e.audible)observations.push({r:row,c:col,kind:'audible',index});
       if(e.portalLink)observations.push({r:row,c:col,kind:'portalLink',...e.portalLink,index});
@@ -127,7 +137,7 @@
     else raw=[...new Set(external[d].map(w=>Math.max(cell.walls[d],w)))];
     return [...new Set(raw.flatMap(w=>expandWall(w,config.dynamicDoors)))];
   }
-  function matchBlocks(config,observations,focus,originOnly=false){
+  function matchBlocks(config,observations,focus,originOnly=false,allowedIds=null){
     const {blocks,templates}=preparedPool(config),n=config.size;
     const positions=[];
     for(let lr=0;lr<(originOnly?1:3);lr++)for(let lc=0;lc<(originOnly?1:3);lc++){
@@ -138,7 +148,7 @@
       positions.push({lr,lc,origin,relevant,edgeEvidence});
     }
     const matches=[];
-    for(const block of blocks) for(const {lr,lc,origin,relevant,edgeEvidence} of positions){
+    for(const block of blocks.filter(b=>!allowedIds||allowedIds.has(b.id))) for(const {lr,lc,origin,relevant,edgeEvidence} of positions){
       const template=templates.get(block.id);
       const getWalls=(i,d)=>(config.dynamicDoors?template.dynamic:template.raw)[i*4+d];
       let wallConflict=false;
@@ -152,7 +162,7 @@
       const converted=i=>template.converted[i];
       const surviving=variants(block,config.event).filter(types=>relevant.every(o=>{
         const type=types[o.i];
-        if(o.kind==='quiet')return soundTypes(type,config.event).includes('NONE');
+        if(o.kind==='quiet')return soundTypes(type,config.event).includes('NONE')&&!(type==='TRAP'&&o.continues);
         if(o.kind==='audible')return soundTypes(type,config.event).some(s=>s!=='NONE');
         if(o.kind==='nonPortalSound'&&type==='PORTAL')return converted(o.i);
         if(o.kind==='portalLink')return type==='PORTAL'&&block.cells[o.i].portal?.[0]===o.dr&&block.cells[o.i].portal?.[1]===o.dc;
@@ -209,14 +219,15 @@
     }
     return domains.every((_,i)=>visit(i,new Set()));
   }
-  function solveMap(config,observations,anchors=[]){
+  const provides=(block,feature)=>block.cells.some(c=>feature==='HEAT'?c.type==='HEAT'||c.attach==='HEATBOX':c.attach===feature);
+  function solveMap(config,observations,anchors=[],domainAt=null){
     if(config.size===10)return {phases:[],irregular:true};
     const n=config.size,k=n/3,phases=[];
     for(let pr=0;pr<3;pr++)for(let pc=0;pc<3;pc++){
       if(anchors.some(a=>a.r%3!==pr||a.c%3!==pc))continue;
       const slots=[];
       for(let br=0;br<k;br++)for(let bc=0;bc<k;bc++)slots.push({r:pr+br*3,c:pc+bc*3});
-      let domains=slots.map(p=>matchBlocks(config,observations,p,true).matches.filter(m=>anchors.every(a=>a.r!==p.r||a.c!==p.c||a.id===m.id)));
+      let domains=slots.map(p=>(domainAt?domainAt(p):matchBlocks(config,observations,p,true).matches).filter(m=>anchors.every(a=>a.r!==p.r||a.c!==p.c||a.id===m.id)));
       if(domains.some(d=>!d.length))continue;
       const edges=[];
       for(let a=0;a<slots.length;a++)for(const d of [1,3]){
@@ -269,11 +280,33 @@
           next=domains[edge.b].filter(y=>domains[edge.a].some(x=>compatible(edge,x,y)));
           if(next.length!==domains[edge.b].length){changed=true;domains[edge.b]=next;}
         }
+        if(config.coinGains?.length){
+          if(!Timeline.coinBounds(config,domains,observations).valid){valid=false;break;}
+          for(let s=0;s<domains.length;s++)if(domains[s].length>1){
+            const next=domains[s].filter(m=>Timeline.coinBounds(config,domains.map((d,i)=>i===s?[m]:d),observations).valid);
+            if(next.length!==domains[s].length){changed=true;domains[s]=next;}
+          }
+        }
         if(domains.some(d=>!d.length))valid=false;
       }
-      if(valid&&(config.heartPresence!==true||domains.some(d=>d.some(m=>m.block.cells.some(c=>c.type==='HEART'))))&&hasDistinctAssignment(domains,config.exitCount))phases.push({pr,pc,slots,domains});
+      if(valid&&(config.requiredFeatures||[]).every(f=>domains.some(d=>d.some(m=>provides(m.block,f))))&&(config.heartPresence!==true||domains.some(d=>d.some(m=>m.block.cells.some(c=>c.type==='HEART'))))&&hasDistinctAssignment(domains,config.exitCount))phases.push({pr,pc,slots,domains});
     }
     return {phases,irregular:false};
+  }
+  function mergeMaps(config,a,b,dr,dc,observations,anchors=[]){
+    if(a.irregular||b.irregular)return solveMap(config,observations,anchors);
+    const n=config.size,allowed=new Map();
+    for(const pa of a.phases)for(const pb of b.phases){
+      if(mod(pb.pr+dr,3)!==pa.pr||mod(pb.pc+dc,3)!==pa.pc)continue;
+      const other=new Map(pb.slots.map((s,i)=>[key(mod(s.r+dr,n),mod(s.c+dc,n)),new Set(pb.domains[i].map(m=>m.id))]));
+      for(let i=0;i<pa.slots.length;i++){
+        const k=key(pa.slots[i].r,pa.slots[i].c);if(!allowed.has(k))allowed.set(k,new Set());
+        for(const m of pa.domains[i])if(other.get(k)?.has(m.id))allowed.get(k).add(m.id);
+      }
+    }
+    // Independent domains prune template IDs only. Recheck joint event variants
+    // and door timelines: their existential choices cannot simply be intersected.
+    return solveMap(config,observations,anchors,p=>{const ids=allowed.get(key(p.r,p.c));return ids?.size?matchBlocks(config,observations,p,true,ids).matches:[];});
   }
   function globallyFilter(local,solution){
     if(solution.irregular)return local;
@@ -315,8 +348,9 @@
       function portalFits(){const cell=(r,c)=>{const p=at(mod(r,n),mod(c,n));return chosen[p.slot].block.cells[p.i];},enclosed=(r,c)=>DIRS.every((_,d)=>Math.max(cell(r,c).walls[d],cell(r+V[d][0],c+V[d][1]).walls[OPP[d]])===1);
         return nonPortalSounds.every(o=>{const c=cell(o.r,o.c);return c.type!=='PORTAL'||c.portal&&(enclosed(o.r,o.c)||enclosed(o.r+c.portal[0],o.c+c.portal[1]));})&&portalLinks.every(o=>{const c=cell(o.r,o.c);return c.type==='PORTAL'&&c.portal?.[0]===o.dr&&c.portal?.[1]===o.dc&&!enclosed(o.r,o.c)&&!enclosed(o.r+o.dr,o.c+o.dc);});
       }
-      function visit(){if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;witness=chosen.map(m=>({id:m.id,origin:m.origin}));return true;}
+      function visit(){if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!(config.requiredFeatures||[]).every(f=>chosen.some(m=>provides(m.block,f))))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;witness=chosen.map(m=>({id:m.id,origin:m.origin}));return true;}
         const domains=phase.domains.map((d,i)=>chosen[i]?[chosen[i]]:d.filter(m=>!used.has(m.id)&&fits(i,m)));
+        if(config.coinGains?.length&&!Timeline.coinBounds(config,domains,observations).valid)return false;
         if(config.heartPresence===true){const slots=domains.flatMap((d,i)=>d.some(m=>m.block.cells.some(c=>c.type==='HEART'))?[i]:[]);if(!slots.length)return false;if(slots.length===1)domains[slots[0]]=domains[slots[0]].filter(m=>m.block.cells.some(c=>c.type==='HEART'));}
         if(domains.some(d=>!d.length)||!hasDistinctAssignment(domains,config.exitCount))return false;
         let slot=-1;for(let i=0;i<domains.length;i++)if(!chosen[i]&&(slot<0||domains[i].length<domains[slot].length))slot=i;
@@ -448,6 +482,12 @@
   function validateState(s){
     if(!s||s.version!==1||!s.config||![9,10,12].includes(s.config.size)||!D.modes[s.config.mode]||!['NONE','RAINSTORY','LAZYGARDENER','OVERGROWTH'].includes(s.config.event)||typeof s.config.pool!=='string'||typeof s.config.dynamicDoors!=='boolean')throw new Error('存档配置无效。');
     if(s.config.silent!==undefined&&typeof s.config.silent!=='boolean')throw new Error('静音设置无效。');
+    for(const key of ['brawl','pointCapture'])if(s.config[key]!==undefined&&typeof s.config[key]!=='boolean')throw new Error('特殊模式设置无效。');
+    if(s.config.captureTarget!==undefined&&!['PREVIOUS','NEXT'].includes(s.config.captureTarget))throw new Error('捕捉目标设置无效。');
+    if(s.config.requiredFeatures!==undefined&&(!Array.isArray(s.config.requiredFeatures)||s.config.requiredFeatures.some(f=>!['HEAT','JAMMERBOX','COIN'].includes(f))))throw new Error('附着物线索无效。');
+    if(s.config.buttonCounts!==undefined&&(!s.config.buttonCounts||typeof s.config.buttonCounts!=='object'||Object.entries(s.config.buttonCounts).some(([r,n])=>!/^\d+$/.test(r)||+r<1||!Number.isInteger(n)||n<0||n>10000)))throw new Error('按钮次数线索无效。');
+    if(s.config.coinGains!==undefined&&(!Array.isArray(s.config.coinGains)||s.config.coinGains.length>16000||s.config.coinGains.some(g=>!g||!Number.isInteger(g.player)||g.player<0||g.player>7||!Number.isInteger(g.round)||g.round<1||!Number.isInteger(g.min)||g.min<0||g.min>10000||g.max!=null&&(!Number.isInteger(g.max)||g.max<g.min||g.max>10000))))throw new Error('金币拾取线索无效。');
+    if(s.config.coinTransferRounds!==undefined&&(!Array.isArray(s.config.coinTransferRounds)||s.config.coinTransferRounds.some(r=>!Number.isInteger(r)||r<1)))throw new Error('金币抢夺回合无效。');
     pool(s.config);
     if(s.config.exitCount!==null&&s.config.exitCount!==undefined&&(!Number.isInteger(s.config.exitCount)||s.config.exitCount<0||s.config.exitCount>16))throw new Error('无效逃生区块数量。');
     if(!Array.isArray(s.segments)||!s.segments.length||s.segments.length>100||!Number.isInteger(s.active)||!s.segments[s.active])throw new Error('存档轨迹无效。');
@@ -475,6 +515,6 @@
     if(typeof s.notes!=='string'||!Array.isArray(s.players)||s.players.length<1||s.players.length>8||s.players.some(p=>typeof p.name!=='string'||typeof p.alive!=='boolean')||!['PREVIOUS','NEXT'].includes(s.target))throw new Error('无效玩家或笔记。');
     return clone(s);
   }
-  const api={inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
+  const api={mergeMaps,provides,inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
   if(typeof module!=='undefined')module.exports=api;else root.LongNight=api;
 })(globalThis);
