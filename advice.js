@@ -32,12 +32,12 @@
         if(answers.some(a=>a==null))continue;
         const groups=new Map();domain.forEach((m,i)=>{if(!groups.has(answers[i]))groups.set(answers[i],new Set());groups.get(answers[i]).add(m.id);});
         if(groups.size<2||[...groups.values()].some(a=>[...a].some(id=>[...groups.values()].filter(g=>g.has(id)).length>1)))continue;
-        probes.push({o,d,groups,score:[...groups.values()].reduce((sum,g)=>sum+g.size*g.size,0)});
+        probes.push({o,d,groups,worst:Math.max(...[...groups.values()].map(g=>g.size)),score:[...groups.values()].reduce((sum,g)=>sum+g.size*g.size,0)});
       }
-      probes.sort((a,b)=>a.score-b.score||(a.o.r===reference.r&&a.o.c===reference.c?-1:0)-(b.o.r===reference.r&&b.o.c===reference.c?-1:0)||a.d-b.d);
+      probes.sort((a,b)=>a.worst-b.worst||a.score-b.score||(a.o.r===reference.r&&a.o.c===reference.c?-1:0)-(b.o.r===reference.r&&b.o.c===reference.c?-1:0)||a.d-b.d);
       const partitions=new Set();let count=0;
       for(const probe of (id===built.self?probes:[])){const signature=[...probe.groups.values()].map(g=>[...g].sort().join(',')).sort().join('|');if(partitions.has(signature))continue;partitions.add(signature);
-        lines.push(`区分线索：若再次到达${label(probe.o)}的格子，记录${['上','下','左','右'][probe.d]}侧墙壁。${[...probe.groups].map(([wall,group])=>'若为'+wall+'，候选缩为'+[...group].join(' / ')).join('；')}。这是墙壁私信的预测，不保证移动试探安全。`);
+        lines.push(`区分线索：若再次到达${label(probe.o)}的格子，记录${['上','下','左','右'][probe.d]}侧墙壁。${[...probe.groups].map(([wall,group])=>'若为'+wall+'，候选缩为'+[...group].join(' / ')).join('；')}。本区块候选最坏剩 ${probe.worst} 种；这是墙壁私信的预测，不保证移动试探安全。`);
         if(++count===2)break;
       }
       if(sound?.value==='SHASHA'&&domain.some(m=>m.cellTypes?.[E.mod(sound.r-origin.r,n)*3+E.mod(sound.c-origin.c,n)]?.includes('TRAP')))

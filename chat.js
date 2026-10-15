@@ -92,6 +92,7 @@
     $('message-input').focus();
   });
   function rebuild(scroll=false,choices={}){
+    $('input-conflicts')?.replaceChildren();
     $('block-radar').hidden=true;
     soundSelection=null;renderSoundDetail();fragmentChoices.clear();setup=settings();activeView=journal.view??setup.self??0;team=null;$('perspective-info').replaceChildren();$('combined-info').replaceChildren();$('map-candidates').replaceChildren();if($('combined-layouts')){$('combined-layouts').hidden=true;$('combined-layouts').innerHTML='';}if(worker)worker.terminate();worker=null;++generation;
     built=M.build(journal.base,M.liveMessages(journal.messages),choices);built.resolvedChoices=choices;$('turn-advice').textContent='正在核对本轮线索与相对位置…';activeView=Math.min(activeView,built.count-1);model=built.views[activeView].model;replay=E.replay(model.segments[shownSegment()],model.config.size);selected={r:replay.r,c:replay.c};solution=null;inferred=new Map();phase=0;
@@ -122,6 +123,7 @@
     if(data.resolvedChoices){rebuild(false,data.resolvedChoices);return;}
     if(data.error){$('analysis-status').textContent='需要检查';$('reasoning').innerHTML='<p class="error">'+esc(data.error)+'</p>';return;}
     team=data.local||data.team;
+    renderInputConflicts();
     for(const node of team.nodes)node.advice=node.id===node.player+':'+built.views[node.player].model.active?window.LongNightAdvice.perspective(built,team,node.player):[];
     activateView();renderLocal();renderSoundDetail();
     $('turn-advice').innerHTML='<h3>对局提示 · '+built.self+'号</h3>'+window.LongNightAdvice.summarize(built,team).map(t=>'<p>'+esc(t)+'</p>').join('');
@@ -132,6 +134,16 @@
       return;
     }
     renderPairs();$('analysis-status').textContent=team.nodes.some(n=>n.local?.triplesPending)?'地图推理已完成 · 部分历史方案的整图验证待定':'推理已完成';
+  }
+  function renderInputConflicts(){
+    let panel=$('input-conflicts');if(!panel){panel=document.createElement('div');panel.id='input-conflicts';$('messages').before(panel);}
+    panel.replaceChildren();
+    const failed=team.nodes.filter(n=>n.solution&&!n.solution.irregular&&n.solution.phases.length===0&&!built.views[n.player].ambiguities.length);
+    if(!failed.length)return;
+    const p=document.createElement('p');p.className='warning';p.textContent='以下视角没有可行区块布局：'+[...new Set(failed.map(n=>n.player+'号'))].join('、')+'。请核对回合、轨迹、墙壁与区块池；尚未定位到最小冲突集合。';panel.append(p);
+    for(const [i,m] of journal.messages.entries()){
+      const b=document.createElement('button');b.type='button';b.textContent='核对输入 '+(i+1);b.onclick=()=>document.querySelector('[data-edit="'+CSS.escape(m.id)+'"]')?.click();panel.append(b);
+    }
   }
   function renderGameStatus(){
     const panel=$('game-status');panel.hidden=!ready();if(!ready()){panel.textContent='';return;}
@@ -166,7 +178,9 @@
   function renderMessages(){
     const live=M.liveMessages(journal.messages);
     const intro=migration?'<div class="empty"><p>旧版记录已保留为对局基础。</p><small>现在开始，每次粘贴都能整段撤销。若要重新录入开局，可在右上角新建对局。</small></div>':'';
-    $('messages').innerHTML=intro+(journal.messages.length?journal.messages.map((m,i)=>{
+    const unrecognized=journal.messages.map((m,i)=>({m,i,p:M.inspect(m.text)})).filter(x=>!x.p.items.length);
+    const digestion='<p>共 '+journal.messages.length+' 段输入 · '+unrecognized.length+' 段未识别（仅作笔记）</p>'+unrecognized.map(x=>'<button data-edit="'+esc(x.m.id)+'">核对输入 '+(x.i+1)+'</button>').join('');
+    $('messages').innerHTML=digestion+intro+(journal.messages.length?journal.messages.map((m,i)=>{
       const report=built.reports[i],excluded=live[i].excluded;
       return `<article class="message" data-message="${esc(m.id)}"><div class="message-header"><span>输入 ${i+1} · ${excluded?'已隔离':M.inspect(m.text).privateInput?'本人私聊':'公屏 / 设置'}</span><button data-edit="${esc(m.id)}">编辑</button><button data-remove="${esc(m.id)}">撤销这段</button></div><pre class="message-raw">${esc(m.text)}</pre><div class="reply">${excluded?'<p class="warning">已隔离：含他人私聊或赛后专属信息，请补贴公屏版本。原文保留但不参与实战推理。</p>':''}${report.summary.map(s=>`<p>${esc(s)}</p>`).join('')}${report.warnings.map(s=>`<p class="warning">${esc(s)}</p>`).join('')}</div></article>`;
     }).join(''):'<div class="empty"><p>先贴一条开局墙壁私信就好。</p><small>之后继续贴完整行动轨迹，我会自动记录经过的格子与声响。先填写必填设置；私聊固定归本人，点击地图只切换查看。公开轨迹自动按编号分配。</small></div>');
@@ -586,7 +600,7 @@
     if(editing){const item=next.messages.find(m=>m.id===editing);if(!item)throw new Error('这段输入已被撤销。');item.text=text;item.view=receiver;item.receiverConfirmed=true;}
     else{
       if(next.messages.length>=2000)throw new Error('本对局消息已达上限，请导出存档并开启新对局。');
-      if(/完整行动轨迹/.test(text)&&next.messages.some(m=>M.clean(m.text)===M.clean(text)))throw new Error('这段完整轨迹已输入过。若确实是另一个回合，请在开头加上「【第 2 回合】」等回合标记。');
+      if(next.messages.some(m=>(m.view??receiver)===receiver&&M.clean(m.text)===M.clean(text)&&(/完整行动轨迹|【第\s*\d+\s*回合】|【开局】/.test(text))))throw new Error('这段消息已输入过。若确实属于另一个回合，请修改开头的「【第 2 回合】」等回合标记。');
       next.messages.push({id:globalThis.crypto?.randomUUID?.()||Date.now()+'-'+Math.random(),text,view:receiver,receiverConfirmed:true});
     }
     if(!ready()&&ready(settings(next))){next.view=settings(next).self;next.messages.at(-1).view=next.view;}
@@ -613,6 +627,11 @@
     migration=false;resetEditor();save();rebuild();}));
   function resetGame(){routePlayer=null;localExpanded.clear();localLimits.clear();journal={version:2,base:E.newState(),messages:[]};migration=false;resetEditor();save();rebuild();document.querySelector('.menu').open=false;toast('已重置，请重新填写模式、人数、编号及开局区块。');}
   $('reset-game').addEventListener('click',resetGame);$('new-game').addEventListener('click',resetGame);
+  const reportButton=document.createElement('button');reportButton.type='button';reportButton.textContent='导出文字局况';$('export').after(reportButton);
+  reportButton.addEventListener('click',()=>{
+    const lines=['长夜局况（仅依据本工具已录入信息）',...window.LongNightAdvice.status(built).map(p=>`${p.id}号：已录至第 ${p.round} 回合，${p.alive?'未记录退场':p.reason}`),...window.LongNightAdvice.summarize(built,team)];
+    const url=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='长夜文字局况.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
   rebuild();if(loadError)toast(loadError,true);
 })();
 
