@@ -67,5 +67,5 @@ for cpp, mode in [('twist','TWIST'),('button','BUTTON'),('trap','TRAP'),('open',
 modes['WILD'] = [b['id'] for b in blocks if not b['id'].startswith('S')]
 modes['CRAZY'] = [b['id'] for b in blocks]
 data = {'source': str(SOURCE), 'sha256': hashlib.sha256(raw.encode()).hexdigest(), 'blocks': blocks, 'modes': modes}
-(ROOT/'blocks.js').write_text('/* Generated from lgtbot map.h; see NOTICE.md. */\n(function(root){ const data = '+json.dumps(data,ensure_ascii=False,separators=(',',':'))+'; if(typeof module!=="undefined") module.exports=data; else root.LongNightData=data; })(globalThis);\n', encoding='utf-8')
+(ROOT/'blocks.js').write_text('/* Generated from lgtbot map.h; see 交流/NOTICE-数据来源与版权.md. */\n(function(root){ const data = '+json.dumps(data,ensure_ascii=False,separators=(',',':'))+'; if(typeof module!=="undefined") module.exports=data; else root.LongNightData=data; })(globalThis);\n', encoding='utf-8')
 print(f'Extracted {len(blocks)} blocks; SHA256 {data["sha256"]}')
