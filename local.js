@@ -95,6 +95,23 @@
   return {waiting:false,singles,doubles,triples,expanded,needsMore,truncated,searchSteps,maxBlocks,focusCandidates:local.matches.map(compact),focus,gap:local.gap,irregular:n===10};
  }
  function analyze(config,node,solution,onProgress=null){
+  if(node.portalAlternatives){
+   const out={waiting:false,singles:[],doubles:[],triples:[],expanded:[],focusCandidates:[],focus:node.focus,portalRoutes:true,searchSteps:0,truncated:false},seen=new Map();
+   for(const alternative of node.portalAlternatives){
+    const focus=alternative.positions[0];if(!focus)continue;
+    const branch={...node,portalAlternatives:null,observations:alternative.observations,focus};
+    const local=analyze(config,branch,alternative.solution,onProgress);
+    out.truncated ||= local.truncated;out.searchSteps+=local.searchSteps||0;
+    for(const kind of ['singles','doubles','triples','expanded','focusCandidates']){
+     if(!seen.has(kind))seen.set(kind,new Set());
+     for(const candidate of local[kind]||[]){
+      const key=JSON.stringify([candidate.blocks||[candidate],focus]);if(seen.get(kind).has(key))continue;seen.get(kind).add(key);
+      out[kind].push({...candidate,patternFocus:{r:focus.r,c:focus.c},observations:alternative.observations});
+     }
+    }
+   }
+   return out;
+  }
   // Exhaustive callers already reach every size. Bounded automatic expansion
   // must reserve independent searches for small explanations before large ones.
   if(config.localMaxBlocks||config.size===10||config.localSearchBudget===Infinity)return analyzeBounded(config,node,solution,onProgress);

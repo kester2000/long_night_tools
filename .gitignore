@@ -1,3 +1,6 @@
 node_modules/
 artifacts/
 *.log
+
+# Local UI recovery transcript; not a reusable test fixture.
+backups/before-load-visible-record.txt

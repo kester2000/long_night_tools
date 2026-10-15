@@ -330,9 +330,46 @@
     }
     return {checked:true,fallback:inExitBlock||nearest<5,inExitBlock,exitDistance:Number.isFinite(nearest)?nearest:null,reason:inExitBlock?'出生点位于逃生舱区块，仅回退出生方案允许':nearest<5?'出生到逃生舱已有 '+nearest+' 格可通行路径，短于常规要求的 5 格':''};
   }
-  function verifyCompleteLayout(config,solution,observations,budget=20000){
+  // Complete initial maps only. RandomizePlayers tries non-exit blocks before
+  // relaxing that requirement; an exit-block birth is not an unconditional fallback.
+  function birthLayoutCheck(config,placements,births,budget=10000){
+    if(!births.length||config.size%3||config.event&&config.event!=='NONE')return {valid:true,pending:!!births.length};
+    const n=config.size,cells=Array(n*n),slotAt=Array(n*n),blocks=placements.map(b=>b.block||byId.get(b.id));
+    placements.forEach((b,s)=>blocks[s].cells.forEach((c,i)=>{const k=mod(b.origin.r+Math.floor(i/3),n)*n+mod(b.origin.c+i%3,n);cells[k]=c;slotAt[k]=s;}));
+    if(cells.filter(Boolean).length!==n*n)return {valid:true,pending:true};
+    const blocked=c=>['HEAT','HEART'].includes(c.type)||['BOX','HEATBOX','JAMMERBOX'].includes(c.attach);
+    const edges=cells.map((c,k)=>V.flatMap(([dr,dc],d)=>{const q=mod(Math.floor(k/n)+dr,n)*n+mod(k%n+dc,n),other=cells[q];return !blocked(c)&&!blocked(other)&&[0,4].includes(Math.max(c.walls[d],other.walls[OPP[d]]))?[q]:[];}));
+    const visited=new Set(),components=[];
+    for(let k=0;k<cells.length;k++){if(visited.has(k))continue;const list=[k];visited.add(k);for(let i=0;i<list.length;i++)for(const q of edges[list[i]])if(!visited.has(q)){visited.add(q);list.push(q);}components.push(list);}
+    const largest=Math.max(...components.map(c=>c.length)),count=config.playerCount||births.length,exits=cells.flatMap((c,i)=>c.type==='EXIT'?[i]:[]);
+    const known=births.map(b=>({...b,k:mod(b.r,n)*n+mod(b.c,n)})),distances=new Map();
+    const distance=(a,b)=>{if(!distances.has(a)){const ds=Array(n*n).fill(Infinity),queue=[a];ds[a]=0;for(let i=0;i<queue.length;i++)for(const q of edges[queue[i]])if(ds[q]===Infinity){ds[q]=ds[queue[i]]+1;queue.push(q);}distances.set(a,ds);}return distances.get(a)[b];};
+    let steps=0,pending=false;
+    for(const component of components.filter(c=>c.length===largest)){
+      const area=new Set(component);if(known.some(b=>!area.has(b.k)))continue;
+      // The source stops collecting candidate cells at the first exit tile.
+      const candidates=blocks.map((block,s)=>{const found=[];for(let i=0;i<9;i++){if(block.cells[i].type==='EXIT')break;const p=placements[s],k=mod(p.origin.r+Math.floor(i/3),n)*n+mod(p.origin.c+i%3,n);if(area.has(k)&&edges[k].length>=2)found.push(k);}return {slot:s,exit:block.cells.some(c=>c.type==='EXIT'),cells:found};});
+      const normal=candidates.filter(b=>!b.exit&&b.cells.length),all=candidates.filter(b=>b.cells.length),pool=normal.length>=count?normal:all.length>=count?all:null;
+      if(!pool){if(new Set(known.map(b=>b.k)).size===known.length)return {valid:true,pending};continue;}
+      if(known.some(b=>!pool.some(p=>p.slot===slotAt[b.k]&&p.cells.includes(b.k)))||new Set(known.map(b=>slotAt[b.k])).size!==known.length)continue;
+      if(pool!==normal)return {valid:true,pending};
+      function exists(checkExit){
+        const options=normal.map(b=>({...b,cells:b.cells.filter(k=>!checkExit||exits.every(e=>distance(k,e)>=5))})).filter(b=>b.cells.length),chosen=[],used=new Set();
+        function visit(){if(++steps>budget)return null;if(chosen.length===count)return count===1||distance(chosen.at(-1),chosen[0])>=5;
+          for(const b of options){if(used.has(b.slot))continue;for(const k of b.cells){if(chosen.length&&distance(chosen.at(-1),k)<5)continue;used.add(b.slot);chosen.push(k);const result=visit();chosen.pop();used.delete(b.slot);if(result!==false)return result;}}return false;}
+        return visit();
+      }
+      const stage1=exists(true),stage2=stage1===false?exists(false):false;
+      if(stage1===null||stage2===null){pending=true;return {valid:true,pending};}
+      if(stage1&&known.some(b=>exits.some(e=>distance(b.k,e)<5)))continue;
+      if(stage1||stage2){if(known.some(a=>known.some(b=>(b.player===(a.player+1)%count)&&distance(a.k,b.k)<5)))continue;}
+      return {valid:true,pending,stage:stage1?1:stage2?2:3};
+    }
+    return {valid:false,pending,reason:'出生点不满足最大连通区域、候选区块或优先出生方案'};
+  }
+  function verifyCompleteLayout(config,solution,observations,budget=20000,enumeration=null){
     if(!solution||solution.irregular)return {status:'unknown',blocks:[],steps:0};
-    const n=config.size;let steps=0,limited=false,witness=null;
+    const n=config.size;let steps=0,limited=false,witness=null;const layouts=[],seen=new Set();
     const nonPortalSounds=observations.filter(o=>o.kind==='nonPortalSound'),portalLinks=observations.filter(o=>o.kind==='portalLink');
     for(const phase of solution.phases){
       const at=(r,c)=>({slot:Math.floor(mod(r-phase.pr,n)/3)*(n/3)+Math.floor(mod(c-phase.pc,n)/3),i:mod(r-phase.pr,3)*3+mod(c-phase.pc,3)}),requirements=[];
@@ -348,7 +385,7 @@
       function portalFits(){const cell=(r,c)=>{const p=at(mod(r,n),mod(c,n));return chosen[p.slot].block.cells[p.i];},enclosed=(r,c)=>DIRS.every((_,d)=>Math.max(cell(r,c).walls[d],cell(r+V[d][0],c+V[d][1]).walls[OPP[d]])===1);
         return nonPortalSounds.every(o=>{const c=cell(o.r,o.c);return c.type!=='PORTAL'||c.portal&&(enclosed(o.r,o.c)||enclosed(o.r+c.portal[0],o.c+c.portal[1]));})&&portalLinks.every(o=>{const c=cell(o.r,o.c);return c.type==='PORTAL'&&c.portal?.[0]===o.dr&&c.portal?.[1]===o.dc&&!enclosed(o.r,o.c)&&!enclosed(o.r+o.dr,o.c+o.dc);});
       }
-      function visit(){if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!(config.requiredFeatures||[]).every(f=>chosen.some(m=>provides(m.block,f))))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;witness=chosen.map(m=>({id:m.id,origin:m.origin}));return true;}
+      function visit(){if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!(config.requiredFeatures||[]).every(f=>chosen.some(m=>provides(m.block,f))))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;witness=chosen.map(m=>({id:m.id,origin:m.origin}));if(!enumeration)return true;const signature=witness.map(b=>b.id+'@'+key(b.origin.r,b.origin.c)).sort().join('|');if(!seen.has(signature)){seen.add(signature);layouts.push(witness);}return layouts.length>enumeration.limit;}
         const domains=phase.domains.map((d,i)=>chosen[i]?[chosen[i]]:d.filter(m=>!used.has(m.id)&&fits(i,m)));
         if(config.coinGains?.length&&!Timeline.coinBounds(config,domains,observations).valid)return false;
         if(config.heartPresence===true){const slots=domains.flatMap((d,i)=>d.some(m=>m.block.cells.some(c=>c.type==='HEART'))?[i]:[]);if(!slots.length)return false;if(slots.length===1)domains[slots[0]]=domains[slots[0]].filter(m=>m.block.cells.some(c=>c.type==='HEART'));}
@@ -358,7 +395,7 @@
       }
       if(visit())break;if(limited)break;
     }
-    return {status:witness?'verified':limited?'unknown':'impossible',blocks:witness?determinedBlocks(solution):[],layout:witness,steps};
+    return {status:witness?'verified':limited?'unknown':'impossible',blocks:witness?determinedBlocks(solution):[],layout:witness,steps,...(enumeration?{layouts:layouts.slice(0,enumeration.limit),complete:!limited&&layouts.length<=enumeration.limit,overflow:layouts.length>enumeration.limit}: {})};
   }
   function certifyBlocks(config,solution,observations,budget=20000){
     const proof=verifyCompleteLayout(config,solution,observations,budget);
@@ -415,14 +452,22 @@
       if(values.size&&[...values].every(w=>w!==0))out.set(key(r,c)+':'+d,'墙');else if(values.size===1&&values.has(0))out.set(key(r,c)+':'+d,'空');
     }return out;
   }
-  function inferredDoors(config,solution,knownBlocks=[],observations=[]){
+  function inferredWallKinds(config,solution,knownBlocks=[]){
     const out=new Map();if(!solution||solution.irregular||!solution.phases.length||!knownBlocks.length)return out;
     const n=config.size,known=new Map(knownBlocks.map(b=>[key(b.origin.r,b.origin.c),b.id]));
     const at=(p,r,c)=>{const slot=Math.floor(mod(r-p.pr,n)/3)*(n/3)+Math.floor(mod(c-p.pc,n)/3),origin=p.slots[slot],id=known.get(key(origin.r,origin.c));return {slot,i:mod(r-p.pr,3)*3+mod(c-p.pc,3),domain:id?p.domains[slot].filter(m=>m.id===id):p.domains[slot]};};
     for(const block of knownBlocks)for(let i=0;i<9;i++)for(let d=0;d<4;d++){
       const r=mod(block.origin.r+Math.floor(i/3),n),c=mod(block.origin.c+i%3,n),rr=mod(r+V[d][0],n),cc=mod(c+V[d][1],n),values=new Set();
       for(const p of solution.phases){const a=at(p,r,c),b=at(p,rr,cc);if(a.slot===b.slot){for(const x of a.domain)values.add(Math.max(x.block.cells[a.i].walls[d],x.block.cells[b.i].walls[OPP[d]]));}else for(const x of a.domain)for(const y of b.domain)values.add(Math.max(x.block.cells[a.i].walls[d],y.block.cells[b.i].walls[OPP[d]]));}
-      if(!values.size||![...values].every(w=>w===3||w===4))continue;
+      if(!values.size)continue;
+      out.set(key(r,c)+':'+d,[...values]);out.set(key(rr,cc)+':'+OPP[d],[...values]);
+    }return out;
+  }
+  function inferredDoors(config,solution,knownBlocks=[],observations=[]){
+    const n=config.size,out=new Map();
+    for(const [edge,kinds] of inferredWallKinds(config,solution,knownBlocks)){
+      if(!kinds.every(w=>w===3||w===4))continue;
+      const values=new Set(kinds),[r,c,d]=edge.split(/[,:]/).map(Number),rr=mod(r+V[d][0],n),cc=mod(c+V[d][1],n);
       let state=!config.dynamicDoors&&values.size===1?(values.has(3)?'closed':'open'):'unknown',last=null;
       for(const o of observations){const side=o.r===r&&o.c===c?d:o.r===rr&&o.c===cc?OPP[d]:-1;if(side<0)continue;
         const observed=o.kind==='walls'?(o.value[side]==='墙'?'closed':o.value[side]==='空'?'open':null):o.kind==='pass'&&o.dir===side?'open':null;
@@ -515,6 +560,6 @@
     if(typeof s.notes!=='string'||!Array.isArray(s.players)||s.players.length<1||s.players.length>8||s.players.some(p=>typeof p.name!=='string'||typeof p.alive!=='boolean')||!['PREVIOUS','NEXT'].includes(s.target))throw new Error('无效玩家或笔记。');
     return clone(s);
   }
-  const api={mergeMaps,provides,inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
+  const api={inferredWallKinds,birthLayoutCheck,mergeMaps,provides,inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
   if(typeof module!=='undefined')module.exports=api;else root.LongNight=api;
 })(globalThis);

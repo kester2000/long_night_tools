@@ -58,15 +58,68 @@
       if(!fused.irregular&&!fused.phases.length&&joined.length>1){result.fusionConflict=true;result.joined=[joined[0]];result.mergedObservations=result.observations;}
       else {result.solution=fused;result.joined=joined;result.mergedObservations=observations;}
     }
-    for(const result of results)result.verification=E.certifyBlocks(config,result.solution,result.mergedObservations||result.observations);
-    if(onLocal)onLocal({nodes:results,pairs,conflict,stage:'aligned'});
+    const enumerated=new WeakMap();
     for(const result of results){
+      const obs=result.mergedObservations||result.observations;
+      result.verification=E.certifyBlocks(config,result.solution,obs);
+      if(!enumerated.has(result.solution))enumerated.set(result.solution,E.verifyCompleteLayout(config,result.solution,obs,5000,{limit:8}));
+      result.completeLayouts=enumerated.get(result.solution);
+    }
+    const combined=enumerateCombined(config,{nodes:results,pairs,conflict},onProgress);
+    if(combined?.complete&&combined.cases.length)applyCombined(config,results,combined);
+    if(onLocal)onLocal({nodes:results,pairs,conflict,combined,stage:'aligned'});
+    for(const result of results){
+      if(config.routePresentation){result.local.historyPending=false;result.retained=[];result.retainedSingles=[];continue;}
+      if(result.portalAlternatives){result.local.historyPending=false;result.retained=[];result.retainedSingles=[];continue;}
       onProgress?.({stage:'history',player:result.player,checks:0,kept:0});
       result.retained=L.retained(config,result,result.solution,result.local);
       result.retainedSingles=L.retainedSingles(config,result,result.solution);
       result.local=L.preserveTriples(config,{...result,observations:result.mergedObservations||result.observations},result.solution,result.local,progress=>onProgress?.({stage:'history',player:result.player,...progress}));
     }
-    return {nodes:results,pairs,conflict};
+    return {nodes:results,pairs,conflict,combined};
+  }
+  function enumerateCombined(config,team,onProgress=null,limits={}){
+    const nodes=team.nodes.filter(n=>n.observations.length||n.anchors?.length);
+    if(nodes.length<2||config.size%3||team.conflict)return null;
+    const n=config.size,maxCases=limits.maxCases??256,maxLayouts=limits.maxLayouts??4096,budget=limits.budget??50000;
+    let complete=!nodes.some(n=>n.portalAlternatives?.length||n.routeAlternatives?.length),checks=0,examined=0,stopped=false,spawnPending=false;
+    const cases=[],reference=nodes[0],offsets=new Map([[reference.id,{dr:0,dc:0}]]);
+    function domain(a,b){const p=team.pairs.find(p=>p.a===a&&p.b===b||p.a===b&&p.b===a);return p?.offsets.map(d=>p.a===a?d:{dr:E.mod(-d.dr,n),dc:E.mod(-d.dc,n)})||[];}
+    function options(node){let out=domain(reference.id,node.id);for(const [id,d] of offsets){if(id===reference.id)continue;const allowed=new Set(domain(id,node.id).map(x=>E.key(E.mod(x.dr+d.dr,n),E.mod(x.dc+d.dc,n))));out=out.filter(x=>allowed.has(E.key(x.dr,x.dc)));}return out;}
+    function visit(){
+      if(stopped)return;
+      if(offsets.size<nodes.length){
+        const next=nodes.filter(node=>!offsets.has(node.id)).map(node=>({node,options:options(node)})).sort((a,b)=>a.options.length-b.options.length)[0];
+        for(const d of next.options){offsets.set(next.node.id,d);visit();offsets.delete(next.node.id);if(stopped)break;}return;
+      }
+      if(checks++>=maxCases){complete=false;stopped=true;return;}
+      onProgress?.({stage:'combined',checked:checks,found:cases.reduce((s,c)=>s+c.layouts.length,0)});
+      const joined=nodes.map(node=>({id:node.id,...offsets.get(node.id)})),observations=nodes.flatMap(node=>{const d=offsets.get(node.id);return node.observations.map(o=>shift(o,d.dr,d.dc,n));}),anchors=nodes.flatMap(node=>{const d=offsets.get(node.id);return (node.anchors||[]).map(o=>shift(o,d.dr,d.dc,n));});
+      const solution=E.solveMap(config,observations,anchors),enumeration=E.verifyCompleteLayout(config,solution,observations,budget,{limit:Math.max(1,maxLayouts-examined)});
+      if(!enumeration.complete)complete=false;
+      const births=nodes.filter(node=>node.birth).map(node=>{const d=offsets.get(node.id);return {...shift(node.birth,d.dr,d.dc,n),player:node.player};});
+      const layouts=[];
+      for(const layout of enumeration.layouts||[]){examined++;const spawn=E.birthLayoutCheck(config,layout,births);if(spawn.valid)layouts.push(layout);if(spawn.pending){spawnPending=true;complete=false;}}
+      if(layouts.length||!enumeration.complete)cases.push({joined,layouts,complete:enumeration.complete&&!spawnPending});
+      if(examined>=maxLayouts){complete=false;stopped=true;}
+    }
+    visit();
+    return {reference:reference.id,nodeIds:nodes.map(n=>n.id),cases,complete,spawnPending,examined,checks,count:cases.reduce((s,c)=>s+c.layouts.length,0),unlocated:team.nodes.filter(n=>!nodes.includes(n)).map(n=>n.id)};
+  }
+  function applyCombined(config,nodes,combined){
+    const n=config.size;
+    for(const node of nodes.filter(n=>combined.nodeIds.includes(n.id))){
+      const layouts=combined.cases.flatMap(c=>{const at=c.joined.find(j=>j.id===node.id);return c.layouts.map(layout=>layout.map(b=>({id:b.id,origin:shift(b.origin,-at.dr,-at.dc,n)})));});
+      const tag=b=>b.id+'@'+E.key(b.origin.r,b.origin.c),supported=new Set(layouts.flatMap(layout=>layout.map(tag))),common=layouts[0].filter(b=>layouts.every(layout=>layout.some(x=>tag(x)===tag(b))));
+      const phases=node.solution.phases.map(p=>({...p,domains:p.domains.map(d=>d.filter(b=>supported.has(tag(b))))})).filter(p=>p.domains.every(d=>d.length));
+      node.solution={...node.solution,phases};node.verification={status:'verified',blocks:common,layout:layouts[0],uncertain:0,source:'combined'};
+      const first=combined.cases[0],at=first.joined.find(j=>j.id===node.id);
+      node.joined=first.joined.map(j=>({id:j.id,dr:E.mod(j.dr-at.dr,n),dc:E.mod(j.dc-at.dc,n)})).filter(j=>combined.cases.every(c=>{const a=c.joined.find(x=>x.id===node.id),b=c.joined.find(x=>x.id===j.id);return E.mod(b.dr-a.dr,n)===j.dr&&E.mod(b.dc-a.dc,n)===j.dc;}));
+      node.mergedObservations=node.joined.flatMap(j=>nodes.find(x=>x.id===j.id).observations.map(o=>shift(o,j.dr,j.dc,n)));
+      // Deduplicate maps in this coordinate frame, independently of translation cases.
+      const unique=[...new Map(layouts.map(l=>[l.map(tag).sort().join('|'),l])).values()];
+      node.completeLayouts={status:'verified',layouts:unique,complete:true,overflow:false};
+    }
   }
   function globalView(team,visibleIds,playerCount){
     if(!team||team.conflict)return null;
@@ -74,5 +127,18 @@
     if(!visible.length||(playerCount>1&&visible.length<2))return null;
     return visible.find(node=>!node.fusionConflict&&node.verification?.status==='verified'&&node.verification.blocks.length&&visible.every(other=>node.joined?.some(j=>j.id===other.id)))||null;
   }
-  const api={globalView,solve,compatible,shift};if(typeof module!=='undefined')module.exports=api;else root.LongNightTeam=api;
+  function viewGroups(team,visibleIds){
+    const remaining=new Set(visibleIds),groups=[];
+    for(const id of visibleIds){
+      if(!remaining.has(id))continue;
+      const node=team?.nodes.find(n=>n.id===id),members=[id];
+      if(!team?.conflict&&!node?.fusionConflict&&node?.verification?.status==='verified')for(const j of node.joined||[]){
+        const other=team.nodes.find(n=>n.id===j.id);
+        if(j.id!==id&&remaining.has(j.id)&&!other?.fusionConflict&&other?.verification?.status==='verified'&&other.joined?.some(k=>k.id===id))members.push(j.id);
+      }
+      members.forEach(k=>remaining.delete(k));groups.push(members);
+    }
+    return groups;
+  }
+  const api={enumerateCombined,viewGroups,globalView,solve,compatible,shift};if(typeof module!=='undefined')module.exports=api;else root.LongNightTeam=api;
 })(globalThis);

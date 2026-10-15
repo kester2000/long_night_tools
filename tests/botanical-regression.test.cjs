@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict');
-const E=require('../engine'),M=require('../messages'),L=require('../local'),A=require('../advice');
+const E=require('../engine'),M=require('../messages'),L=require('../local'),A=require('../advice'),R=require('../route-explanations');
 const messages=['玩家人数：4','模式疯狂\n区块池：默认','我是0号','【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙墙空空','[0号]玩家本回合的完整行动轨迹：\n←(←撞)','【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空墙空','[1号]玩家本回合的完整行动轨迹：\n→(↑撞)'].map((text,i)=>({id:String(i),view:0,text}));
 test('botanical save: expansion budget cannot starve the four single-block explanations',()=>{
  const built=M.build(E.newState(),messages),v=built.views[0],r=E.replay(v.model.segments[0],9),config=v.model.config,solution=E.solveMap(config,r.observations),node={id:'0:0',observations:r.observations,focus:r,solution};
@@ -9,7 +9,9 @@ test('botanical save: expansion budget cannot starve the four single-block expla
   assert.deepEqual(local.singles,small.singles);
   assert.deepEqual(local.singles.map(c=>c.blocks[0].id).sort(),['17','18','38','41']);
   assert(local.singlesComplete);assert(local.truncated);
-  assert(A.perspective(built,{nodes:[{...node,local}]},0).some(s=>s.includes('17「植物园A」')&&s.includes('不能据此直接认定')));
+  const explanations=R.explain(config,{observations:r.observations,focus:r,solution},{singles:small.singles,truncated:true},0);
+  assert(explanations.cases.some(c=>c.status==='verified'&&c.blocks.some(b=>b.id==='17')));
+  assert(!A.perspective(built,{nodes:[{...node,local}]},0).some(s=>/单区块|双区块|三区块/.test(s)));
  }
  const botanical=small.singles.find(c=>c.blocks[0].id==='17');
  assert.deepEqual(botanical.blocks[0].origin,{r:2,c:2});assert.deepEqual([botanical.lr,botanical.lc],[2,1]);

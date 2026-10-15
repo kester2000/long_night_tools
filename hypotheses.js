@@ -164,5 +164,22 @@
     return updates.length?{...previous,...Object.fromEntries(updates)}:null;
   }
   function all(config,notebook){return Array.from({length:notebook.count},(_,id)=>analyze(config,notebook.base,notebook.messages,id,notebook.self,null,notebook.choices?.[id]||{})).filter(Boolean);}
-  const api={analyze,all,portalFrames,choiceUpdates};if(typeof module!=='undefined')module.exports=api;else root.LongNightHypotheses=api;
+  // An unknown paired exit has no single coordinate frame. Shared map facts
+  // use the verified entrance prefix; local candidates independently enumerate
+  // complete alternatives with their correlated exit, sounds and collisions.
+  function constrainNodes(nodes,relations,hypotheses){
+    const uncertain=new Set();
+    const constrained=nodes.map(node=>{
+      const h=hypotheses.find(h=>h.confirmedPortal&&!h.resolvedChoices&&h.portalViews&&node.id===h.player+':'+h.segment);
+      if(!h)return node;
+      uncertain.add(node.id);
+      const observations=[...h.portalViews.before.observations,{kind:'terrain',r:h.entry.r,c:h.entry.c,value:'PORTAL'}];
+      return {...node,observations,focus:{...h.entry},histories:[],previous:null,portalPrefix:true,
+        portalAlternatives:h.groups.find(g=>g.kind==='portal').alternatives};
+    });
+    // Original relations after the entrance use the obsolete walking position.
+    // They are still checked against complete routes by crossFits above.
+    return {nodes:constrained,relations:relations.filter(r=>!uncertain.has(r.aNode)&&!uncertain.has(r.bNode))};
+  }
+  const api={analyze,all,portalFrames,choiceUpdates,constrainNodes};if(typeof module!=='undefined')module.exports=api;else root.LongNightHypotheses=api;
 })(globalThis);

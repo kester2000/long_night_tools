@@ -1,0 +1,63 @@
+const assert=require('node:assert/strict'),path=require('node:path');
+const {chromium}=require(process.env.LONG_NIGHT_PLAYWRIGHT||'playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.LONG_NIGHT_BROWSER});
+ try{
+  const page=await browser.newPage({viewport:{width:1600,height:1100}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(require('node:url').pathToFileURL(path.resolve('index.html')).href);
+  await page.evaluate(j=>localStorage.setItem('long-night-message-notebook-v2',JSON.stringify(j)),{...require('./fixtures/four-player-birth.json'),mapShifts:{1:{r:2,c:5}}});
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#combined-layouts > h3')?.textContent.includes('16 张'),null,{timeout:60000});
+  assert.equal(await page.locator('#all-boards > .player-map').count(),1);
+  assert.equal(await page.locator('.combined-map').count(),16);
+  assert.equal(await page.locator('.dock-panel').count(),5);
+  assert.equal(await page.locator('.map-shift,[data-shift-player]').count(),0);
+  assert.equal(await page.locator('[data-panel=maps] #game-status,[data-panel=maps] .perspective-advice,[data-panel=maps] .player-local,[data-panel=maps] .block-options').count(),0);
+  assert.equal(await page.locator('[data-panel=info] #game-status').count(),1);
+  assert.equal(await page.locator('.combined-map .block-preview:visible').count(),16);
+  assert.equal(await page.locator('#combined-layouts details').count(),0);
+  assert.equal(await page.locator('.combined-map').first().locator('.preview-cell').count(),81);
+  assert.equal(await page.locator('.combined-map').first().locator('.birth-marker').count(),4);
+  assert.deepEqual((await page.locator('.combined-map').first().locator('.current-marker').allTextContents()).flatMap(t=>t.split('·')).sort(),['0','1','2','3']);
+  const main=page.locator('#board-1'),original=await main.innerHTML();
+  assert.equal(await main.locator('[data-r="1"][data-c="8"]').getAttribute('data-known-block'),'13');
+  const first=page.locator('[data-combined="1"]'),second=page.locator('[data-combined="2"]');
+  await first.hover();assert(await page.locator('.combined-main-preview').isVisible());assert(!(await main.isVisible()));
+  assert((await page.locator('.preview-caption').innerText()).includes('候选 1'));
+  await page.mouse.move(5,5);assert(await main.isVisible());assert.equal(await main.innerHTML(),original);
+  await first.click();await page.mouse.move(5,5);assert(await page.locator('.combined-main-preview').isVisible());
+  await second.hover();assert((await page.locator('.preview-caption').innerText()).includes('候选 2'));
+  await page.mouse.move(5,5);assert((await page.locator('.preview-caption').innerText()).includes('候选 1'));
+  await page.keyboard.press('Escape');assert(await main.isVisible());
+  await second.click();await page.locator('[data-exit-preview]').click();assert(await main.isVisible());
+  await second.click();await page.screenshot({path:'artifacts/archive-thumbnail-preview.png'});
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#view-tabs button').count(),1);
+  await page.locator('[data-status-view="3"]').click();assert(await main.isVisible());
+  assert.equal(await page.locator('[data-status-view="3"]').getAttribute('aria-pressed'),'true');
+  assert(await main.locator('.game-route-overlay[data-route-player="3"] .route-lines path').count()>0);
+  const points=await main.locator('.game-route-overlay .route-points g').count();assert(points>1);
+  await page.locator('[data-status-view="1"]').click();
+  assert.equal(await page.locator('.game-route-overlay[data-route-player="3"]').count(),0);
+  assert(await main.locator('.game-route-overlay[data-route-player="1"]').count()>0);
+  assert(await main.locator('.route-hit').count()>0);
+  const colors=await main.locator('.route-lines path').evaluateAll(els=>[...new Set(els.map(e=>e.style.stroke))]);assert(colors.length>=2);
+  assert(await page.locator('.game-route-caption .route-round-legend>span').count()>=2);
+  await page.locator('[data-status-view="1"]').click();
+  assert.equal(await page.locator('.game-route-overlay').count(),0);
+  assert.equal(await page.locator('[data-status-view="1"]').getAttribute('aria-pressed'),'false');
+  await page.locator('[data-status-view="1"]').click();
+  assert(await main.locator('.route-hit').count()>0);
+
+  await page.locator('[data-combined="1"]').click();
+  assert(await page.locator('.combined-main-preview .game-route-overlay[data-route-player="1"]').count()>0);
+  await page.keyboard.press('Escape');
+  await page.screenshot({path:'artifacts/player-full-route.png'});
+  await page.locator('[data-clear-player-route]').first().click();assert.equal(await page.locator('.game-route-overlay').count(),0);
+
+  await page.locator('#reset-game').click();
+  assert(!(await page.locator('#combined-layouts').isVisible()));
+  assert.deepEqual(errors,[]);
+  console.log('Real archive: block 13 certified, four views merged, 16 global maps with all markers, thumbnail hover/click preview, restore and reset passed.');
+ }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

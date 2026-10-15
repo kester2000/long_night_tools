@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "base": {
+    "version": 1,
+    "config": {
+      "size": 9,
+      "mode": "TWIST",
+      "pool": "",
+      "event": "NONE",
+      "dynamicDoors": true,
+      "silent": false,
+      "exitCount": null
+    },
+    "segments": [
+      {
+        "name": "初始轨迹",
+        "events": [],
+        "sounds": [],
+        "anchors": []
+      }
+    ],
+    "active": 0,
+    "notes": "",
+    "players": [
+      {
+        "name": "0号",
+        "alive": true
+      },
+      {
+        "name": "1号",
+        "alive": true
+      },
+      {
+        "name": "2号",
+        "alive": true
+      },
+      {
+        "name": "3号",
+        "alive": true
+      }
+    ],
+    "target": "PREVIOUS"
+  },
+  "messages": [
+    {
+      "id": "f6eee310-c595-4b10-85ad-8add49c28e85",
+      "text": "玩家人数：4",
+      "view": 0
+    },
+    {
+      "id": "3c02a458-75e4-4736-bea2-06bea6540899",
+      "text": "模式幻变\n区块池：默认",
+      "view": 0
+    },
+    {
+      "id": "d4d2eec0-6596-4317-98a2-eda18416e5b7",
+      "text": "我是1号",
+      "view": 1
+    },
+    {
+      "id": "60e42a17-a2c7-40c4-9ab5-292dfc6cad8c",
+      "text": "区块池：4 5 6 8 10 11 12 13 14 24 48 49 E1 E4 E7 E8",
+      "view": 1
+    },
+    {
+      "id": "73ff4a6a-0564-4e10-8572-6ffc2892728a",
+      "text": "【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空墙空墙",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "d38c56a2-5e60-49bb-b6c2-a125e9c2b013",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↑(←撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "8cf72373-2060-4212-8df8-0b408f361db9",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n←↑(→撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "0eb20261-ea82-42ca-866c-b553879f8c1e",
+      "text": "【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空墙",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "03e40d49-a731-4cd9-ba9f-c280f2ee68ce",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n←(←撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "dd337f95-d6d9-4e63-8565-41264e096587",
+      "text": "[3号]玩家本回合的完整行动轨迹：\n[←啪嗒]←×3↑×3(→撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "4a7086d4-3730-4c03-89d0-2069671d52a2",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↓→↓↑←←↑↑(↑撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "e28b2023-09f8-4c33-9efc-3dfd155f4c1a",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↑↑→←[↑啪嗒]↓↓↑(←撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "ad2e05a3-98ee-4c9f-9751-871152a8edd1",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n→↓→↑×4(↑撞)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "a746c6ec-714b-4f04-8cd3-68489c1c1052",
+      "text": "[3号]玩家本回合的完整行动轨迹：\n[↑啪嗒]↓×4→→↓↓←↑(逃生)",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "60e84243-23ad-48ad-8a15-28c310fbb3a6",
+      "text": "[3号(第1步)]你听见了来自【右上方】的啪嗒声！",
+      "view": 1,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "64d66e40-1b21-4e06-9a9b-868d1912271e",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n(停止)(捕捉)[传送]",
+      "view": 1,
+      "receiverConfirmed": true
+    }
+  ],
+  "mapShifts": {},
+  "view": 1
+}

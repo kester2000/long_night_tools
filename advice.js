@@ -4,14 +4,8 @@
   function perspective(built,team,id){
     const v=built.views[id],node=team?.nodes.find(x=>x.id===id+':'+v.model.active),lines=[];
     if(!node||team.conflict||node.fusionConflict||v.ambiguities.length)return lines;
-    const singles=node.local?.singles||[],singleIds=[...new Set(singles.map(c=>c.blocks[0].id))];
-    if(singleIds.length&&singleIds.length<=8)lines.push('完整覆盖目前已知路线的单区块方案：'+singleIds.map(id=>id+'「'+E.byId.get(id).name+'」').join('、')+'。这是优先核对的简洁解释，多区块拼接仍可能成立，不能据此直接认定区块。');
-    if(!singleIds.length&&node.retainedSingles?.length){
-      const verified=node.retainedSingles.filter(c=>c.verification==='verified'),pending=node.retainedSingles.filter(c=>c.verification!=='verified');
-      const names=cs=>[...new Set(cs.map(c=>c.blocks[0].id))].map(id=>id+'「'+E.byId.get(id).name+'」').join('、');
-      if(verified.length)lines.push('此前路线的单区块假设仍成立：'+names(verified)+'。这些原位置的区块均找到符合新增线索的完整地图；路线已向外延伸，当前单区块为0不等于它们被排除，也不代表当前位置仍在原区块。');
-      if(pending.length)lines.push('此前单区块假设仍待整图验证：'+names(pending)+'；暂不排除，也不作为确定区块补画。');
-    }
+    const retained=node.retainedSingles?.filter(c=>c.verification==='verified')||[];
+    if(retained.length)lines.push('此前经过的区块仍有完整地图支持：'+[...new Set(retained.map(c=>c.blocks[0].id))].map(id=>id+'「'+E.byId.get(id).name+'」').join('、')+'。路线已向外延伸，请结合当前完整路线核对。');
     const s=node.solution,config=v.model.config,n=config.size,observations=node.mergedObservations||node.observations;
     if(!s||s.irregular||s.phases.length!==1||node.verification?.status!=='verified')return lines;
     const p=s.phases[0];
