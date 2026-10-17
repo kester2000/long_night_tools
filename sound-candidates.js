@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
  'use strict';
+  (root.LongNightSources ||= {})['sound-candidates.js']=longNightModule.toString();
  const E=typeof module!=='undefined'?require('./engine'):root.LongNight;
  const L=typeof module!=='undefined'?require('./local'):root.LongNightLocal,patternCache=new WeakMap();
  const shift=(o,dr,dc,n)=>({...o,r:E.mod(o.r+dr,n),c:E.mod(o.c+dc,n)});

@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['quick-input.js']=longNightModule.toString();
   function compose({kind,player,round,route,walls,direction,step,sound}){
     if(!Number.isInteger(round)||round<0)throw new Error('回合须为非负整数，0 表示开局。');
     const header=round===0?'【开局】':`【第 ${round} 回合】`;

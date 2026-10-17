@@ -24,6 +24,14 @@ test('redstone center buttons retain every positive and negative target',()=>{
 const config={size:9,playerCount:1,dynamicDoors:true};
 function placement(){const cells=Array.from({length:9},()=>({walls:[0,0,0,0],attach:null}));cells[0].walls[3]=cells[1].walls[2]=3;cells[4].attach='BUTTON';cells[4].buttons=[[-1,-1,'RIGHT']];return [{origin:{r:0,c:0},block:{cells}}];}
 const obs=(kind,step,extra={})=>({kind,r:0,c:0,dir:3,clock:{round:1,player:0,step},...extra});
+test('preview door states follow button toggles and preserve missing-action uncertainty',()=>{
+ const cfg={...config,size:3};
+ assert.equal(Timeline.check(cfg,placement(),[],true).doorStates['0:1'],'closed');
+ const press=obs('action',1,{r:1,c:1,arrival:true}),end=obs('turnEnd',1000000);
+ assert.equal(Timeline.check(cfg,placement(),[press,end],true).doorStates['0:1'],'open');
+ assert.equal(Timeline.check(cfg,placement(),[press,obs('action',2,{r:1,c:1,arrival:true}),end],true).doorStates['0:1'],'closed');
+ assert.equal(Timeline.check(cfg,placement(),[obs('turnEnd',1000000)],true).doorStates['0:1'],'unknown');
+});
 test('button arrival opens a closed door and a second arrival closes it again',()=>{
  assert.equal(Timeline.check(config,placement(),[obs('pass',1)]).valid,false);
  const first=[obs('action',1,{r:1,c:1,arrival:true}),obs('pass',2)];assert(Timeline.check(config,placement(),first).valid);

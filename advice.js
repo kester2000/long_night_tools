@@ -1,9 +1,11 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['advice.js']=longNightModule.toString();
   const E=typeof module!=='undefined'?require('./engine'):root.LongNight;
   function perspective(built,team,id){
+    if(built.spectator)return [];
     const v=built.views[id],node=team?.nodes.find(x=>x.id===id+':'+v.model.active),lines=[];
-    if(!node||team.conflict||node.fusionConflict||v.ambiguities.length)return lines;
+    if(!node||node.routePending||team.conflict||node.fusionConflict||v.ambiguities.length)return lines;
     const retained=node.retainedSingles?.filter(c=>c.verification==='verified')||[];
     if(retained.length)lines.push('此前经过的区块仍有完整地图支持：'+[...new Set(retained.map(c=>c.blocks[0].id))].map(id=>id+'「'+E.byId.get(id).name+'」').join('、')+'。路线已向外延伸，请结合当前完整路线核对。');
     const s=node.solution,config=v.model.config,n=config.size,observations=node.mergedObservations||node.observations;
@@ -51,7 +53,7 @@
   }
   function radar(built,team,id){
     const v=built.views[id],node=team?.nodes.find(n=>n.id===id+':'+v.model.active);
-    if(!node||team.conflict||node.fusionConflict||v.ambiguities.length)return null;
+    if(!node||node.routePending||team.conflict||node.fusionConflict||v.ambiguities.length)return null;
     const at=E.replay(v.model.segments[v.model.active],v.model.config.size),obs=node.mergedObservations||at.observations;
     if(!obs.length)return null;
     const local=E.globallyFilter(E.matchBlocks(v.model.config,obs,at),node.solution),ids=[...new Set(local.matches.map(m=>m.id))];
@@ -59,12 +61,18 @@
     return {ids,gap:local.gap,verified:certain?.id||null,segment:v.model.active};
   }
   function practical(built){
+    if(built.spectator)return [];
     const self=built.self,v=built.views[self],lines=[],config=v.model.config;
+    for(const segment of v.model.segments){const hints=E.openCollisions(E.replay(segment,config.size).observations,config.size);
+      for(const {hit,hedgePossible} of new Set(hints.values()))lines.push(`第${hit.clock.round}回合第${hit.clock.step}步向${['上','下','左','右'][hit.dir]}撞击，但同回合墙壁反馈为空。${hedgePossible?'可能遇到树篱：前一步方向不同，未满足同回合同方向连续移动的冲刺条件；树篱私聊显示为空。':'此前已同向移动，不能只用树篱解释此次撞击。'}也需保留推箱失败或门状态变化等解释，不能把这条边认定为永久实墙。`);
+    }
     const coinBlocks=E.pool(config).filter(b=>b.cells.some(c=>c.attach==='COIN')).map(b=>b.id+'「'+b.name+'」').join('、');
+    for(const source of config.coinSources||[])lines.push(`${source.player}号第${source.round}回合按金币来自${source.block}号区块筛选；按钮来源单独核对，不要求金币和按钮在同一区块。`);
     for(const gain of config.coinGains||[]){
       if((config.coinTransferRounds||[]).includes(gain.round))lines.push(`${gain.player}号第${gain.round}回合获得金币；该回合有捕捉或抢夺记录，保留转移来源，暂不强制绑定金币格。`);
       else lines.push(`${gain.player}号第${gain.round}回合获得${gain.max==null?'至少'+gain.min:gain.min}枚金币：当回合路线必须经过相应数量的未消耗金币格，候选区块为${coinBlocks||'无（请核对区块池）'}；已用于筛选完整路线与地图，重复经过同格只计一次。`);
     }
+    for(const x of config.playerButtonCounts||[])if(x.inferred)lines.push(`第${x.round}回合全体按钮公告结合其他玩家完整路线，推出${x.player}号触发按钮${x.count}次；候选路线必须经过相应按钮。`);
     for(const [round,count] of Object.entries(config.buttonCounts||{}))lines.push(`第${round}回合门公告：全体玩家共触发按钮${count}次；用于核对已定位落点，双方完整路线与全图确定后核对总数。`);
     for(const segment of v.model.segments){let entry=null;for(const e of segment.events){
       if(e.portalLink)entry=e;
@@ -84,7 +92,8 @@
   }
   function hypothesis(h){
     const lines=[],label=`${h.player}号第${h.round}回合第${h.step}步`,names=ids=>ids.map(id=>id+'「'+E.byId.get(id).name+'」').join('、');
-    if(h.recovery)lines.push(h.recovery==='reopened'?`${h.player}号原先接上的路线已出现矛盾，已自动撤回旧选择并重新检查传送门入口。`:`${h.player}号原有路线无法解释全部线索，已自动在声音未知或可能被心跳掩盖的步骤补充传送门假设；只有通过完整验证的唯一方案才会接回主地图。`);
+    if(h.recovery==='silent')lines.push(`${h.player}号默认按未传送连续绘制；传送路线另行验证，尚未确定实际路线。`);
+    else if(h.recovery)lines.push(h.recovery==='reopened'?`${h.player}号原先接上的路线已出现矛盾，已自动撤回旧选择并重新检查传送门入口。`:`${h.player}号原有路线无法解释全部线索，已自动在声音未知或可能被心跳掩盖的步骤补充传送门假设；只有通过完整验证的唯一方案才会接回主地图。`);
     if(h.groundOnly?.status==='impossible')lines.push(`${h.player}号全程按地面移动的解释已排除：与已录入的行动、墙壁及地图约束矛盾。${h.requiresPortal?'已验证存在传送门路线，因此至少经过一次传送门。':'正在核对传送门路线，尚未完成的分支保持待验证。'}`);
     if(h.truncated&&h.search)lines.push(`${h.player}号传送搜索已检查${h.search.visited}个节点，还有${h.search.pending}个分支待验证；不能据此声称没有传送。`);
     for(const g of h.groups){
@@ -101,6 +110,7 @@
     return lines;
   }
   function summarize(built,team){
+    if(built.spectator)return ['观战视角：仅使用公屏信息，查看各玩家独立或合并地图；不指定本人、追捕目标或私聊接收者。'];
     const self=built.self,v=built.views[self],n=v.model.config.size,lines=[];
     const node=team?.nodes.find(x=>x.id===self+':'+v.model.active),end=v.roundEnds.at(-1);
     const delta=x=>{x=E.mod(x,n);return x>n/2?x-n:x;};
@@ -113,7 +123,7 @@
       if(e.portalLink)entry=e;
       if(e.kind==='teleport'&&entry){lines.push(`${other.id}号第${entry.clock.round}回合第${entry.clock.step}步进入传送门，${e.clock.round!==entry.clock.round?'第'+e.clock.round+'回合':''}第${e.clock.step}步从配对出口出现；亚空间内两步不按地面移动绘制${other.model.config.silent?'，静音下也会发生传送':''}。`);entry=null;}
     }}
-    if(node?.solution&&!v.ambiguities.length)for(const gain of v.model.config.coinGains||[]){
+    if(node?.solution&&!node.routePending&&!v.ambiguities.length)for(const gain of v.model.config.coinGains||[]){
       if(gain.player!==self||(v.model.config.coinTransferRounds||[]).includes(gain.round))continue;
       const obs=node.mergedObservations||node.observations,arrivals=obs.filter(o=>o.kind==='action'&&o.arrival),steps=new Set();
       for(const o of arrivals.filter(o=>o.clock?.player===self&&o.clock.round===gain.round)){
@@ -125,15 +135,15 @@
     for(const other of built.views)for(const e of other.model.segments.flatMap(s=>s.events).filter(e=>e.firstSound))lines.push(`${other.id}号第${e.clock.round}回合第${e.clock.step}步为本局首次发声：此前未隐匿移动已排除发声地形，心跳掩盖也算此前发声；“首次”本身不提供方位。`);
     for(const h of team?.hypotheses||[])lines.push(...hypothesis(h));
     for(const capture of built.captures||[])lines.push(`${capture.player}号第${capture.round}回合捕捉${capture.target}号${capture.protected?'（首轮保护）':'，'+capture.target+'号已出局'}。${capture.aligned?'已用捕捉时同格的位置约束对齐地图。':'捕捉瞬间尚未定位，保留同格线索待验证。'}`);
-    if(node&&!team.conflict&&!node.fusionConflict&&end?.locatable!==false&&!v.ambiguities.length){
+    if(node&&!node.routePending&&!team.conflict&&!node.fusionConflict&&end?.locatable!==false&&!v.ambiguities.length){
       const at=E.replay(v.model.segments[v.model.active],n),target=E.targets(built.players,v.model.config.captureTarget||v.model.target)[self];
       for(const joined of node.joined||[]){const [id,segment]=joined.id.split(':').map(Number),other=built.views[id],last=other.roundEnds.at(-1);
-        if(id===self||segment!==other.model.active||!built.players[id].alive||other.ambiguities.length||last?.locatable===false||!last)continue;
+        if(team.nodes.find(n=>n.id===joined.id)?.routePending||id===self||segment!==other.model.active||!built.players[id].alive||other.ambiguities.length||last?.locatable===false||!last)continue;
         const p=E.replay(other.model.segments[segment],n);
         lines.push(`${id}号${id===target?'（你的捕捉目标）':''}第${last.round}回合末，在你第${end?.round||0}回合末位置的${relative(delta(p.r+joined.dr-at.r),delta(p.c+joined.dc-at.c))}。这是对应回合的已知位置；尚未录入的行动可能改变它。`);
       }
       for(const other of built.views){
-        if(other.id===self||!built.players[other.id].alive||other.ambiguities.length)continue;
+        if(team.nodes.find(n=>n.id===other.id+':'+other.model.active)?.routePending||other.id===self||!built.players[other.id].alive||other.ambiguities.length)continue;
         const id=other.id+':'+other.model.active,pair=team.pairs?.find(p=>p.a===node.id&&p.b===id||p.b===node.id&&p.a===id),last=other.roundEnds.at(-1);
         if(!pair||pair.offsets.length<2||!last||last.locatable===false)continue;
         const p=E.replay(other.model.segments[other.model.active],n),sign=pair.a===node.id?1:-1,positions=[...new Set(pair.offsets.map(o=>relative(delta(p.r+sign*o.dr-at.r),delta(p.c+sign*o.dc-at.c))))];

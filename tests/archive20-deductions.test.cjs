@@ -1,0 +1,21 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const X=require('../example-search'),C=require('../search-cache'),M=require('../messages'),I=require('../inference');
+const journal=require('./fixtures/archive20.json');
+test('archive20 exhaustive unique events become reusable deductions and only certified blocks are pinned',async()=>{
+ const records=[],store={all:async()=>records,put:async r=>{records.splice(0,records.length,r);return true;}};
+ const result=await X.cachedSearch(journal,'0:0',{eventBranches:true,player:1},()=>{},30000,'v20',store);
+ assert.equal(result.complete,true);const d=result.deductions;assert(d);
+ assert.equal(d.events[0].button[0].step,13);assert.equal(d.events[0].coin[0].step,18);
+ assert.deepEqual(d.blocks.find(x=>x.player===1).blocks.map(x=>x.id).sort(),['45','49']);
+ assert(d.blocks.reduce((n,x)=>n+x.blocks.length,0)<9,'a witness must not become a fixed entire map');
+ const cached=await C.load('v20',journal,store);assert.deepEqual(cached.record.deductions,d);
+ const restored=C.apply(journal,cached.record.deductions),built=M.build(restored.base,restored.messages,restored.choices);
+ assert(built.views.every(v=>!v.ambiguities.length));assert.equal(built.views[1].model.segments[0].anchors.length,4);
+ const team=await I.run({config:built.model.config,notebook:{...journal,self:built.self,count:built.count},deductions:d,relations:built.relations,playerBudgetMs:3000});
+ assert.deepEqual(team.nodes.find(n=>n.player===1).verification.blocks.map(b=>b.id).sort(),['45','49']);
+ const next=structuredClone(journal);next.messages.push({id:'next4',text:'[0号]玩家本回合的完整行动轨迹：\n↑',view:0});
+ assert.equal((await C.load('v20',next,store)).mode,'prefix');
+ assert.deepEqual((await C.load('v20',next,store)).record.deductions,d);
+ next.messages[9].text+='↑';assert.equal((await C.load('v20',next,store)).mode,'miss');
+ assert.equal((await C.load('v21',journal,store)).mode,'miss');
+});

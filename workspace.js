@@ -1,5 +1,6 @@
-(()=>{
+(function longNightPage(){
  'use strict';
+  (globalThis.LongNightSources ||= {})['workspace.js']=longNightPage.toString();
  const STORE='long-night-workspace-v1',$=s=>document.querySelector(s),clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
  const definitions=[
   ['setup','对局设置','⚙','left',260,['.game-options','.rule-options','#block-picker','#setup-hint']],

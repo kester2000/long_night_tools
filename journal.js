@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['journal.js']=longNightModule.toString();
   const E=typeof module!=='undefined'?require('./engine'):root.LongNight;
   const M=typeof module!=='undefined'?require('./messages'):root.LongNightMessages;
   const meaningfulBase=j=>j.base.segments.some(s=>s.events.length||s.sounds.length||s.anchors.length);

@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['engine.js']=longNightModule.toString();
   const D = typeof module !== 'undefined' ? require('./blocks.js') : root.LongNightData;
   const Timeline=typeof module!=='undefined'?require('./timeline.js'):root.LongNightTimeline;
   const DIRS = ['上','下','左','右'], V = [[-1,0],[1,0],[0,-1],[0,1]], OPP = [1,0,3,2];
@@ -7,6 +8,9 @@
   const ATTACH = {EMPTY:'无附着',BUTTON:'按钮',BOX:'箱子',HEATBOX:'小太阳',JAMMERBOX:'屏蔽器',COIN:'金币',BOMB:'炸弹'};
   const mod = (x,n)=>(x%n+n)%n, key=(r,c)=>`${r},${c}`;
   const clone = x=>JSON.parse(JSON.stringify(x));
+  let deadline=Infinity;
+  function setDeadline(value=Infinity){deadline=value;}
+  function checkDeadline(){if(Date.now()>=deadline){const error=new Error('推理已达到 3 秒上限');error.code='INFERENCE_TIMEOUT';throw error;}}
   const byId = new Map(D.blocks.map(b=>[b.id,b]));
   function parseWalls(text){
     const s = (text||'').replace(/[\s，,、/|]/g,'').replace(/[？*]/g,'?');
@@ -22,7 +26,7 @@
     return chars.map(c=>aliases[c]);
   }
   const poolCache=new Map(),poolMetadata=new WeakMap();
-  const poolKey=config=>((config.pool||'').trim()?'custom:'+config.pool.trim().toUpperCase():'mode:'+config.mode)+':heart='+config.heartPresence;
+  const poolKey=config=>((config.pool||'').trim()?'custom:'+config.pool.trim().toUpperCase():'mode:'+config.mode)+':heart='+config.heartPresence+':atm='+!!config.preferATM;
   function pool(config){
     const custom=(config.pool||'').trim(),cacheKey=poolKey(config);
     if(poolCache.has(cacheKey))return poolCache.get(cacheKey).slice();
@@ -31,6 +35,7 @@
     const bad = ids.filter(id=>!byId.has(id));
     if(bad.length) throw new Error(`不存在的区块编号：${bad.join('、')}`);
     const blocks=[...new Set(ids)].map(id=>byId.get(id)).filter(b=>config.heartPresence!==false||!b.cells.some(c=>c.type==='HEART'));
+    if(config.preferATM)blocks.sort((a,b)=>Number(/提款机/.test(b.name))-Number(/提款机/.test(a.name)));
     // A bounded cache also handles repeatedly edited public/custom pools.
     if(poolCache.size>=64)poolCache.delete(poolCache.keys().next().value);
     poolCache.set(cacheKey,blocks);return blocks.slice();
@@ -54,7 +59,7 @@
     return poolMetadata.get(blocks);
   }
   function newState(){return {version:1,config:{size:9,mode:'TWIST',pool:'',event:'NONE',dynamicDoors:true,silent:false,exitCount:null},segments:[{name:'初始轨迹',events:[],sounds:[],anchors:[]}],active:0,notes:'',players:[{name:'0号',alive:true},{name:'1号',alive:true},{name:'2号',alive:true},{name:'3号',alive:true}],target:'PREVIOUS'};}
-  function replay(segment,size){
+  function replay(segment,size){checkDeadline();
     let r=Math.floor(size/2),c=r,last=-1;
     const observations=[],trace=[{r,c}],log=[];
     segment.events.forEach((e,index)=>{
@@ -62,7 +67,7 @@
         if(e.outcome==='move'){
           observations.push({r,c,kind:'pass',dir:e.dir,last,index});
           r=mod(r+V[e.dir][0],size);c=mod(c+V[e.dir][1],size);last=e.dir;trace.push({r,c});
-        } else if(e.outcome==='hit'){observations.push({r,c,kind:'hit',dir:e.dir,last,index});last=-1;}
+        } else if(e.outcome==='hit'){observations.push({r,c,kind:'hit',dir:e.dir,last:e.previousDir??last,index});last=-1;}
         else last=e.dir;
         // Subspace wall feedback is always empty and carries no physical-wall evidence.
         if(e.outcome!=='space') addObservation(e,r,c,index);
@@ -90,6 +95,7 @@
         observations.push({r:row,c:col,kind:'quiet',index,continues});
       }
       if(e.nonPortalSound)observations.push({r:row,c:col,kind:'nonPortalSound',index});
+      if(e.nonExitBlock)observations.push({r:row,c:col,kind:'nonExitBlock',index});
       if(e.audible)observations.push({r:row,c:col,kind:'audible',index});
       if(e.portalLink)observations.push({r:row,c:col,kind:'portalLink',...e.portalLink,index});
       if(e.sound) observations.push({r:row,c:col,kind:'sound',value:e.sound,index});
@@ -128,6 +134,18 @@
   const expandWall=(w,dynamic)=>dynamic && (w===3||w===4)?[3,4]:[w];
   const hasBoxes=block=>block.cells.some(c=>['BOX','HEATBOX','JAMMERBOX'].includes(c.attach));
   function edgeFits(w,o,d,box=false){return o.kind==='walls'?wallFeedback(w)===o.value[d]:o.kind==='hit'?box||w===1||w===3||(w===2&&o.last!==d):w===0||w===4||(w===2&&o.last===d);}
+  function openCollisions(observations,n){
+    const out=new Map();
+    for(const hit of observations.filter(o=>o.kind==='hit'&&o.clock)){
+      const rr=mod(hit.r+V[hit.dir][0],n),cc=mod(hit.c+V[hit.dir][1],n);
+      const report=observations.find(o=>o.kind==='walls'&&o.clock?.round===hit.clock.round&&o.clock.player===hit.clock.player&&o.clock.step>=hit.clock.step&&
+        (o.r===hit.r&&o.c===hit.c&&o.value[hit.dir]==='空'||o.r===rr&&o.c===cc&&o.value[OPP[hit.dir]]==='空'));
+      if(!report)continue;
+      const info={hit,hedgePossible:hit.last!==hit.dir};
+      out.set(key(hit.r,hit.c)+':'+hit.dir,info);out.set(key(rr,cc)+':'+OPP[hit.dir],info);
+    }
+    return out;
+  }
   function hitBoxPossible(config,block,i,d){const rr=Math.floor(i/3)+V[d][0],cc=i%3+V[d][1];return rr>=0&&rr<3&&cc>=0&&cc<3?hasBoxes(block):preparedPool(config).anyBoxes;}
   // Unknown neighbour blocks are existential possibilities, never assumed to have empty edges.
   function possibleWalls(block,i,d,config,external){
@@ -137,7 +155,7 @@
     else raw=[...new Set(external[d].map(w=>Math.max(cell.walls[d],w)))];
     return [...new Set(raw.flatMap(w=>expandWall(w,config.dynamicDoors)))];
   }
-  function matchBlocks(config,observations,focus,originOnly=false,allowedIds=null){
+  function matchBlocks(config,observations,focus,originOnly=false,allowedIds=null){checkDeadline();
     const {blocks,templates}=preparedPool(config),n=config.size;
     const positions=[];
     for(let lr=0;lr<(originOnly?1:3);lr++)for(let lc=0;lc<(originOnly?1:3);lc++){
@@ -149,6 +167,7 @@
     }
     const matches=[];
     for(const block of blocks.filter(b=>!allowedIds||allowedIds.has(b.id))) for(const {lr,lc,origin,relevant,edgeEvidence} of positions){
+      if(relevant.some(o=>o.kind==='nonExitBlock')&&block.cells.some(c=>c.type==='EXIT'))continue;
       const template=templates.get(block.id);
       const getWalls=(i,d)=>(config.dynamicDoors?template.dynamic:template.raw)[i*4+d];
       let wallConflict=false;
@@ -159,6 +178,7 @@
       }
       if(wallConflict)continue;
       if(block.cells.some(c=>c.walls.some(w=>w===3||w===4))&&!Timeline.check(config,[{block,origin}],relevant).valid)continue;
+      if((!config.event||config.event==='NONE')&&block.cells.some(c=>c.type==='TRAP')&&!Timeline.trapCheck(config,[{block,origin}],observations).valid)continue;
       const converted=i=>template.converted[i];
       const surviving=variants(block,config.event).filter(types=>relevant.every(o=>{
         const type=types[o.i];
@@ -189,7 +209,7 @@
     }
     return {matches,gap,total:blocks.length*9,types:[...new Set([...matches.flatMap(m=>m.types),...(gap?['EMPTY']:[])])]};
   }
-  function hasDistinctAssignment(domains,exitCount=null){
+  function hasDistinctAssignment(domains,exitCount=null){checkDeadline();
     if(exitCount!==null&&exitCount!==undefined){
       const ids=[...new Set(domains.flatMap(d=>d.map(c=>c.id)))],idIndex=new Map(ids.map((id,i)=>[id,i]));
       const firstId=1+domains.length,exitGroup=firstId+ids.length,normalGroup=exitGroup+1,sink=normalGroup+1,graph=Array.from({length:sink+1},()=>[]);
@@ -220,7 +240,7 @@
     return domains.every((_,i)=>visit(i,new Set()));
   }
   const provides=(block,feature)=>block.cells.some(c=>feature==='HEAT'?c.type==='HEAT'||c.attach==='HEATBOX':c.attach===feature);
-  function solveMap(config,observations,anchors=[],domainAt=null){
+  function solveMap(config,observations,anchors=[],domainAt=null){checkDeadline();
     if(config.size===10)return {phases:[],irregular:true};
     const n=config.size,k=n/3,phases=[];
     for(let pr=0;pr<3;pr++)for(let pc=0;pc<3;pc++){
@@ -293,7 +313,7 @@
     }
     return {phases,irregular:false};
   }
-  function mergeMaps(config,a,b,dr,dc,observations,anchors=[]){
+  function mergeMaps(config,a,b,dr,dc,observations,anchors=[]){checkDeadline();
     if(a.irregular||b.irregular)return solveMap(config,observations,anchors);
     const n=config.size,allowed=new Map();
     for(const pa of a.phases)for(const pb of b.phases){
@@ -332,7 +352,7 @@
   }
   // Complete initial maps only. RandomizePlayers tries non-exit blocks before
   // relaxing that requirement; an exit-block birth is not an unconditional fallback.
-  function birthLayoutCheck(config,placements,births,budget=10000){
+  function birthLayoutCheck(config,placements,births,budget=10000){checkDeadline();
     if(!births.length||config.size%3||config.event&&config.event!=='NONE')return {valid:true,pending:!!births.length};
     const n=config.size,cells=Array(n*n),slotAt=Array(n*n),blocks=placements.map(b=>b.block||byId.get(b.id));
     placements.forEach((b,s)=>blocks[s].cells.forEach((c,i)=>{const k=mod(b.origin.r+Math.floor(i/3),n)*n+mod(b.origin.c+i%3,n);cells[k]=c;slotAt[k]=s;}));
@@ -355,7 +375,7 @@
       if(pool!==normal)return {valid:true,pending};
       function exists(checkExit){
         const options=normal.map(b=>({...b,cells:b.cells.filter(k=>!checkExit||exits.every(e=>distance(k,e)>=5))})).filter(b=>b.cells.length),chosen=[],used=new Set();
-        function visit(){if(++steps>budget)return null;if(chosen.length===count)return count===1||distance(chosen.at(-1),chosen[0])>=5;
+        function visit(){checkDeadline();if(++steps>budget)return null;if(chosen.length===count)return count===1||distance(chosen.at(-1),chosen[0])>=5;
           for(const b of options){if(used.has(b.slot))continue;for(const k of b.cells){if(chosen.length&&distance(chosen.at(-1),k)<5)continue;used.add(b.slot);chosen.push(k);const result=visit();chosen.pop();used.delete(b.slot);if(result!==false)return result;}}return false;}
         return visit();
       }
@@ -367,7 +387,7 @@
     }
     return {valid:false,pending,reason:'出生点不满足最大连通区域、候选区块或优先出生方案'};
   }
-  function verifyCompleteLayout(config,solution,observations,budget=20000,enumeration=null){
+  function verifyCompleteLayout(config,solution,observations,budget=20000,enumeration=null){checkDeadline();
     if(!solution||solution.irregular)return {status:'unknown',blocks:[],steps:0};
     const n=config.size;let steps=0,limited=false,witness=null;const layouts=[],seen=new Set();
     const nonPortalSounds=observations.filter(o=>o.kind==='nonPortalSound'),portalLinks=observations.filter(o=>o.kind==='portalLink');
@@ -385,9 +405,10 @@
       function portalFits(){const cell=(r,c)=>{const p=at(mod(r,n),mod(c,n));return chosen[p.slot].block.cells[p.i];},enclosed=(r,c)=>DIRS.every((_,d)=>Math.max(cell(r,c).walls[d],cell(r+V[d][0],c+V[d][1]).walls[OPP[d]])===1);
         return nonPortalSounds.every(o=>{const c=cell(o.r,o.c);return c.type!=='PORTAL'||c.portal&&(enclosed(o.r,o.c)||enclosed(o.r+c.portal[0],o.c+c.portal[1]));})&&portalLinks.every(o=>{const c=cell(o.r,o.c);return c.type==='PORTAL'&&c.portal?.[0]===o.dr&&c.portal?.[1]===o.dc&&!enclosed(o.r,o.c)&&!enclosed(o.r+o.dr,o.c+o.dc);});
       }
-      function visit(){if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!(config.requiredFeatures||[]).every(f=>chosen.some(m=>provides(m.block,f))))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;witness=chosen.map(m=>({id:m.id,origin:m.origin}));if(!enumeration)return true;const signature=witness.map(b=>b.id+'@'+key(b.origin.r,b.origin.c)).sort().join('|');if(!seen.has(signature)){seen.add(signature);layouts.push(witness);}return layouts.length>enumeration.limit;}
+      function visit(){checkDeadline();if(++steps>budget){limited=true;return false;}if(used.size===chosen.length){if(config.exitCount!=null&&chosen.filter(m=>m.id.startsWith('E')).length!==config.exitCount)return false;if(config.heartPresence===true&&!chosen.some(m=>m.block.cells.some(c=>c.type==='HEART')))return false;if(!(config.requiredFeatures||[]).every(f=>chosen.some(m=>provides(m.block,f))))return false;if(!portalFits())return false;if(!Timeline.check(config,chosen,observations).valid)return false;if(config.births?.length){const birth=birthLayoutCheck(config,chosen,config.births);if(birth.pending){limited=true;return false;}if(!birth.valid)return false;}witness=chosen.map(m=>({id:m.id,origin:m.origin}));if(!enumeration)return true;const signature=witness.map(b=>b.id+'@'+key(b.origin.r,b.origin.c)).sort().join('|');if(!seen.has(signature)){seen.add(signature);layouts.push(witness);}return layouts.length>enumeration.limit;}
         const domains=phase.domains.map((d,i)=>chosen[i]?[chosen[i]]:d.filter(m=>!used.has(m.id)&&fits(i,m)));
         if(config.coinGains?.length&&!Timeline.coinBounds(config,domains,observations).valid)return false;
+        if(config.playerButtonCounts?.length&&!Timeline.buttonBounds(config,domains,observations).valid)return false;
         if(config.heartPresence===true){const slots=domains.flatMap((d,i)=>d.some(m=>m.block.cells.some(c=>c.type==='HEART'))?[i]:[]);if(!slots.length)return false;if(slots.length===1)domains[slots[0]]=domains[slots[0]].filter(m=>m.block.cells.some(c=>c.type==='HEART'));}
         if(domains.some(d=>!d.length)||!hasDistinctAssignment(domains,config.exitCount))return false;
         let slot=-1;for(let i=0;i<domains.length;i++)if(!chosen[i]&&(slot<0||domains[i].length<domains[slot].length))slot=i;
@@ -397,7 +418,7 @@
     }
     return {status:witness?'verified':limited?'unknown':'impossible',blocks:witness?determinedBlocks(solution):[],layout:witness,steps,...(enumeration?{layouts:layouts.slice(0,enumeration.limit),complete:!limited&&layouts.length<=enumeration.limit,overflow:layouts.length>enumeration.limit}: {})};
   }
-  function certifyBlocks(config,solution,observations,budget=20000){
+  function certifyBlocks(config,solution,observations,budget=20000){checkDeadline();
     const proof=verifyCompleteLayout(config,solution,observations,budget);
     if(proof.status!=='verified')return proof;
     const blocks=[];let uncertain=0;
@@ -409,7 +430,7 @@
     }
     return {...proof,blocks,uncertain};
   }
-  function refineCompleteLayout(config,solution,observations,maxChecks=160,budget=2000){
+  function refineCompleteLayout(config,solution,observations,maxChecks=160,budget=2000){checkDeadline();
     if(!solution||solution.irregular)return solution;
     const supported=new Set(),phases=[];let checks=0,removed=0,pending=0;
     const tag=(p,b)=>p.pr+','+p.pc+':'+b.id+'@'+key(b.origin.r,b.origin.c);
@@ -529,7 +550,7 @@
     if(s.config.silent!==undefined&&typeof s.config.silent!=='boolean')throw new Error('静音设置无效。');
     for(const key of ['brawl','pointCapture'])if(s.config[key]!==undefined&&typeof s.config[key]!=='boolean')throw new Error('特殊模式设置无效。');
     if(s.config.captureTarget!==undefined&&!['PREVIOUS','NEXT'].includes(s.config.captureTarget))throw new Error('捕捉目标设置无效。');
-    if(s.config.requiredFeatures!==undefined&&(!Array.isArray(s.config.requiredFeatures)||s.config.requiredFeatures.some(f=>!['HEAT','JAMMERBOX','COIN'].includes(f))))throw new Error('附着物线索无效。');
+    if(s.config.requiredFeatures!==undefined&&(!Array.isArray(s.config.requiredFeatures)||s.config.requiredFeatures.some(f=>!['HEAT','JAMMERBOX','COIN','BUTTON'].includes(f))))throw new Error('附着物线索无效。');
     if(s.config.buttonCounts!==undefined&&(!s.config.buttonCounts||typeof s.config.buttonCounts!=='object'||Object.entries(s.config.buttonCounts).some(([r,n])=>!/^\d+$/.test(r)||+r<1||!Number.isInteger(n)||n<0||n>10000)))throw new Error('按钮次数线索无效。');
     if(s.config.coinGains!==undefined&&(!Array.isArray(s.config.coinGains)||s.config.coinGains.length>16000||s.config.coinGains.some(g=>!g||!Number.isInteger(g.player)||g.player<0||g.player>7||!Number.isInteger(g.round)||g.round<1||!Number.isInteger(g.min)||g.min<0||g.min>10000||g.max!=null&&(!Number.isInteger(g.max)||g.max<g.min||g.max>10000))))throw new Error('金币拾取线索无效。');
     if(s.config.coinTransferRounds!==undefined&&(!Array.isArray(s.config.coinTransferRounds)||s.config.coinTransferRounds.some(r=>!Number.isInteger(r)||r<1)))throw new Error('金币抢夺回合无效。');
@@ -560,6 +581,6 @@
     if(typeof s.notes!=='string'||!Array.isArray(s.players)||s.players.length<1||s.players.length>8||s.players.some(p=>typeof p.name!=='string'||typeof p.alive!=='boolean')||!['PREVIOUS','NEXT'].includes(s.target))throw new Error('无效玩家或笔记。');
     return clone(s);
   }
-  const api={inferredWallKinds,birthLayoutCheck,mergeMaps,provides,inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
+  const api={setDeadline,checkDeadline,openCollisions,inferredWallKinds,birthLayoutCheck,mergeMaps,provides,inferredDoors,refineCompleteLayout,displayOffset,certifyBlocks,verifyCompleteLayout,inferredWalls,determinedBlocks,terrainPossibilities,spawnCheck,edgeFits,hasBoxes,hitBoxPossible,DIRS,V,OPP,TYPES,ATTACH,mod,key,clone,byId,parseWalls,parseDirections,pool,newState,replay,variants,soundTypes,wallFeedback,possibleWalls,matchBlocks,solveMap,globallyFilter,inferredTerrain,hasDistinctAssignment,bearings,locate,targets,validateState};
   if(typeof module!=='undefined')module.exports=api;else root.LongNight=api;
 })(globalThis);

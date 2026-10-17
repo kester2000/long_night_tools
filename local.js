@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
  'use strict';
+  (root.LongNightSources ||= {})['local.js']=longNightModule.toString();
  const E=typeof module!=='undefined'?require('./engine.js'):root.LongNight;
  const inside=(p,m,n)=>E.mod(p.r-m.origin.r,n)<3&&E.mod(p.c-m.origin.c,n)<3;
  const compactCache=new WeakMap();

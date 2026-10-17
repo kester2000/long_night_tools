@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['messages.js']=longNightModule.toString();
   const E=typeof module!=='undefined'?require('./engine.js'):root.LongNight;
   const arrows={'↑':0,'↓':1,'←':2,'→':3};
   const clean=s=>s.replace(/\r/g,'').replace(/\\([()[\]])/g,'$1').replace(/(?:<|&lt;)隐匿行动(?:>|&gt;)/g,'(隐匿行动)').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]*>/g,'').trim();
@@ -33,7 +34,9 @@
     const expanded=expandReport(clean(text).replace(/\[([↑↓←→])掩盖\[([^\]]+)\]\]/g,'[$1掩盖$2]')),raw=expanded.text,items=[...expanded.statuses],warnings=[];
     if(raw.length>30000)throw new Error('一次消息最多 30000 字，请分段粘贴。');
     const identity=raw.match(/(?:我是|我的(?:玩家)?(?:编号|号码)(?:是|为)?|自己是)\s*\[?(\d+)\s*号?/);
+    for(const match of raw.matchAll(/(\d+)\s*号(?:的)?出生区块(?:不可能是|不是|不能是|排除)(?:逃生区块|逃生舱区块|逃生块)/g))items.push({kind:'birthBlock',player:+match[1],nonExit:true});
     if(identity){if(+identity[1]>7)throw new Error('玩家编号应为 0–7。');items.push({kind:'identity',id:+identity[1]});}
+    if(/(?:我是|身份[:：]?|视角[:：]?)\s*观战/.test(raw))items.push({kind:'identity',id:0,spectator:true});
     const size=raw.match(/(?:边长|地图大小|地图边长|本局游戏地图为)\s*[:：为是]?\s*(9|10|12)(?!\d)|(?:【|\[)(9|10|12)\s*[*×x]\s*\2(?:】|\])/);
     if(size)items.push({kind:'config',values:{size:+(size[1]||size[2])}});
     const mode=raw.match(/(?:模式\s*[:：为是]?\s*|「)(经典|幻变|狂野|疯狂|按钮|陷阱|空旷|无声)(?:模式)?/);
@@ -44,6 +47,7 @@
     const target=raw.match(/捕捉目标\s*(?:变更为|[:：为是])?\s*(上家|下家)/);if(target)items.push({kind:'config',values:{captureTarget:target[1]==='下家'?'NEXT':'PREVIOUS'}});
     const brawl=raw.match(/大乱斗(?:模式)?\s*[:：为是]?\s*(开启|关闭)|【大乱斗模式】/);if(brawl)items.push({kind:'config',values:{brawl:brawl[1]!=='关闭'}});
     const point=raw.match(/点杀\s*[:：为是]?\s*(开启|关闭)|【关闭点杀】/);if(point)items.push({kind:'config',values:{pointCapture:point[1]==='开启'}});
+    if(/^(?:(?:截至目前|到目前为止|当前|目前|本局|这局)[，,：:\s]*)?(?:(?:还|尚)?(?:没人|无人|没有人)(?:动过|按过|触发过)按钮|按钮(?:都)?(?:还|尚)?(?:没|没有)(?:动过|按过|触发过))(?:呢)?[。！!？?\s]*$/.test(raw))items.push({kind:'noButtons'});
     const heart=raw.match(/(?:本局|这局)(没有|无|有|存在)\s*(?:巨大的)?心脏|心脏\s*[:：为是]?\s*(存在|有|无|没有)/);
     if(heart)items.push({kind:'config',values:{heartPresence:!['没有','无'].includes(heart[1]||heart[2])}});
     const pool=raw.match(/(?:本局(?:公开)?区块(?:池)?|区块池|自定义区块|区块)\s*[:：]\s*((?:(?:[ESes]?\d+)\s*[,，、\s]*)+)/);
@@ -53,14 +57,24 @@
     if(count){const playerCount=+(count[1]||count[2]);if(playerCount<1||playerCount>8)throw new Error('玩家人数应为 1–8。');items.push({kind:'config',values:{playerCount}});}
     const exits=raw.match(/(?:逃生(?:舱|区块)(?:数量|数)?|出口数)\s*[:：为是=]\s*(\d+)/);
     if(exits){if(+exits[1]>16)throw new Error('逃生区块数量最多 16。');items.push({kind:'config',values:{exitCount:+exits[1]}});}
+    for(const match of raw.matchAll(/(\d+)\s*号(?:的)?金币(?:来自|来源于)\s*([ES]?\d+)(?:号)?区块/g)){const round=raw.match(/第\s*(\d+)\s*回合/);const block=match[2].toUpperCase();if(!E.byId.has(block))throw new Error('金币来源区块不存在');items.push({kind:'coinSource',player:+match[1],block,round:round?+round[1]:null});}
     for(const match of raw.matchAll(/玩家\s*(?:\[|【)?(\d+)号(?:】|\])?\s*退出游戏/g))items.push({kind:'status',player:+match[1],reason:'退出游戏',at:match.index});
     for(const match of raw.matchAll(/(?:\[|【)?(\d+)\s*号(?:[：:][^\]】\n]*[】\]]|[】\]])?\s*(?:获得|拾取|捡到|吃到|吃了)(?:了)?\s*(?:(\d+)\s*枚?\s*)?金币(?:[（(]当前共持有\s*(\d+)\s*枚[）)])?/g)){
       const rounds=[...raw.slice(0,match.index).matchAll(/第\s*(\d+)\s*回合/g)];
       items.push({kind:'coins',player:+match[1],count:match[3]===undefined?null:+match[3],gained:match[2]===undefined?null:+match[2],pickup:true,round:rounds.length?+rounds.at(-1)[1]:null,at:match.index});
     }
+    for(const match of raw.matchAll(/(\d+)\s*号\s*(?:确认)?(?:未获得|没有获得|没收到|未收到)\s*金币(?:信息|通知)?/g)){
+      const rounds=[...raw.slice(0,match.index).matchAll(/第\s*(\d+)\s*回合/g)];
+      items.push({kind:'coins',player:+match[1],count:null,gained:0,pickup:true,round:rounds.length?+rounds.at(-1)[1]:null,at:match.index});
+    }
     if(/声响方向被屏蔽|本回合只提醒第一声/.test(raw)||/\((?:被屏蔽)\)/.test(raw))items.push({kind:'feature',value:'JAMMERBOX'});
     if(/\[热浪(?:\(第\d+步\))?\]|移动进入【热浪范围】|[↑↓←→]热浪/.test(raw))items.push({kind:'feature',value:'HEAT'});
     for(const match of raw.matchAll(/门曾被按钮触发，(?:共)?发生\s*(\d+)\s*次变化/g)){const rounds=[...raw.slice(0,match.index).matchAll(/第\s*(\d+)\s*回合/g)];items.push({kind:'doorCount',count:+match[1],round:rounds.length?+rounds.at(-1)[1]:null,at:match.index});}
+    for(const match of raw.matchAll(/(\d+)\s*号(?:玩家)?(?:本回合)?(?:触发|踩到|按下)按钮\s*(\d+)\s*次/g)){const round=raw.match(/第\s*(\d+)\s*回合/);items.push({kind:'playerButtons',player:+match[1],count:+match[2],round:round?+round[1]:null});}
+    if(/确认本回合无额外信息|确认本回合没有门变化公告|【本回合完整额外信息】/.test(raw)&&!items.some(i=>i.kind==='doorCount')){
+      const round=raw.match(/第\s*(\d+)\s*回合/);
+      items.push({kind:'doorCount',count:0,round:round?+round[1]:null});
+    }
     for(const match of raw.matchAll(/抢夺了[^\n]*金币/g)){const rounds=[...raw.slice(0,match.index).matchAll(/第\s*(\d+)\s*回合/g)];items.push({kind:'coinTransfer',round:rounds.length?+rounds.at(-1)[1]:null,at:match.index});}
     if(/\[BOSS(?:-|\])|邦邦所在位置|沉重的喘息声/.test(raw))warnings.push('包含 BOSS 信息：已保留原文；当前未模拟 BOSS 路线与捕捉。');
     const walls=/[墙空?？](?:[\s,，、]*[墙空?？]){3}/g;let wallEnd=0;
@@ -157,7 +171,8 @@
     const completed=new Map();let currentRound=0;
     for(const p of parsed)for(const item of p.items){
       if(item.kind==='trajectory'&&!item.partial){completed.set(item.player,item.round);currentRound=item.round;}
-      if((item.kind==='doorCount'||item.kind==='coinTransfer'||item.kind==='coins'&&item.pickup)&&item.round==null){
+      if(item.kind==='noButtons')item.round=currentRound;
+      if((item.kind==='doorCount'||item.kind==='coinSource'||item.kind==='playerButtons'||item.kind==='coinTransfer'||item.kind==='coins'&&item.pickup)&&item.round==null){
         item.round=item.kind==='coins'?completed.get(item.player)??(currentRound||null):currentRound||null;
         item.inferredRound=item.round!=null;
       }
@@ -217,6 +232,17 @@
         }
       }
     }
+    // Explicit absence of one's own terrain feedback is evidence, not just a dismissed question.
+    for(const message of messages){
+      if(message.excluded)continue;
+      const answer=message.text.match(/线索确认 heartbeat:(\d+):(\d+):(\d+)：未收到声音私聊/);if(!answer)continue;
+      const [,player,round,step]=answer.map(Number);if(player!==self||(message.view??self)!==player)continue;
+      for(const route of routes.filter(r=>r.item.player===player&&r.item.round===round&&!r.item.hidden)){
+        let index=0;for(const token of route.item.tokens){if(token.kind==='hidden'){index+=token.steps||0;continue;}if(token.kind!=='move')continue;index++;
+          if(index===step&&token.outcome==='move'&&!token.sound&&!token.masked&&!token.audible&&!token.terrain){token.confirmedQuiet=true;token.quiet=true;}
+        }
+      }
+    }
     // A direction notification is never sent for the source's first terrain sound.
     // In the first turn, quiet public steps leave only heartbeat-masked arrivals
     // as possible earlier sounds. A single remaining arrival is positive evidence.
@@ -229,7 +255,7 @@
       const moves=route.item.tokens.filter(t=>t.kind==='move'||t.kind==='hidden');if(moves.length<hear.step)continue;
       const prior=moves.slice(0,hear.step-1);
       if(prior.some(t=>t.sound||t.terrain==='BERRY'))continue;
-      const possible=prior.flatMap((t,i)=>t.outcome==='move'&&!t.merged&&hasHeart&&i<19&&i%3===0?[i]:[]);
+      const possible=prior.flatMap((t,i)=>t.outcome==='move'&&!t.merged&&!t.confirmedQuiet&&hasHeart&&i<19&&i%3===0?[i]:[]);
       if(possible.length===1){moves[possible[0]].audible=true;hear.priorSoundStep=possible[0]+1;}
     }
     return parsed;
@@ -237,9 +263,9 @@
   function receiverFor(message,parsed,self){const receiver=message.view??self,hears=parsed.items.filter(i=>i.kind==='hear');return !message.receiverConfirmed&&hears.length&&hears.every(h=>h.player===receiver)&&receiver!==self?self:receiver;}
   function buildOne(base,messages,view,defaultView,choices={},assumptions={}){
     const model=E.clone(base),reports=[],metadata={self:0,round:0,completed:new Set(),pending:new Map(),ends:new Map(),sourceSteps:new Map(),sourcePending:new Map()};
-    model.portalRecovery=!!choices.__portalRecovery;
     const ambiguities=[],branchErrors=[],lifecycle=[];let space=null;
     const parsed=prepare(messages);
+    model.portalRecovery=!!choices.__portalRecovery;
     let heartPresent=false,heartAbsent=false;
     for(const p of parsed)for(const route of p.items.filter(i=>i.kind==='trajectory'&&!i.skipReplay&&!i.hidden)){let step=0;for(const t of route.tokens)if(t.kind==='move'){step++;if(t.masked)heartPresent=true;else if(t.sound&&(step-1)%3===0&&step<=19)heartAbsent=true;}}
     const explicitHeart=parsed.flatMap(p=>p.items).filter(i=>i.kind==='config'&&typeof i.values.heartPresence==='boolean').at(-1)?.values.heartPresence;
@@ -250,12 +276,20 @@
     const brawl=parsed.flatMap(p=>p.items).filter(i=>i.kind==='config'&&typeof i.values.brawl==='boolean').at(-1)?.values.brawl??!!base.config.brawl;
     model.config.requiredFeatures=[...new Set([...(base.config.requiredFeatures||[]),...parsed.flatMap(p=>p.items).flatMap(i=>i.kind==='feature'?[i.value]:i.kind==='coins'&&(i.count>0||i.pickup&&(i.gained==null||i.gained>0))?['COIN']:[])])];
     model.config.buttonCounts={...(base.config.buttonCounts||{})};for(const p of parsed)for(const item of p.items)if(item.kind==='doorCount'&&item.round!=null)model.config.buttonCounts[item.round]=item.count;
+    for(const p of parsed)for(const item of p.items)if(item.kind==='noButtons')for(let round=1;round<=item.round;round++){
+      if(model.config.buttonCounts[round]>0)throw new Error('无人按过按钮与第 '+round+' 回合的按钮公告冲突，请核对。');
+      model.config.buttonCounts[round]=0;
+    }
     const gains=new Map((base.config.coinGains||[]).map(g=>[g.player+':'+g.round,g]));
     for(const p of parsed)for(const item of p.items)if(item.kind==='coins'&&item.pickup&&item.round!=null){
       const key=item.player+':'+item.round,old=gains.get(key);
       if(item.gained!=null||!old)gains.set(key,{player:item.player,round:item.round,min:item.gained??1,max:item.gained});
     }
     model.config.coinGains=[...gains.values()];
+    model.config.coinSources=[...(base.config.coinSources||[])];for(const p of parsed)for(const i of p.items)if(i.kind==='coinSource'&&i.round!=null){model.config.coinSources=model.config.coinSources.filter(x=>x.player!==i.player||x.round!==i.round);model.config.coinSources.push({player:i.player,round:i.round,block:i.block});}
+    model.config.playerButtonCounts=[...(base.config.playerButtonCounts||[])];
+    for(const p of parsed)for(const i of p.items)if(i.kind==='playerButtons'&&i.round!=null){model.config.playerButtonCounts=model.config.playerButtonCounts.filter(x=>x.player!==i.player||x.round!==i.round);model.config.playerButtonCounts.push({player:i.player,round:i.round,count:i.count});}
+    model.config.preferATM=model.config.playerButtonCounts.some(x=>x.count>0&&model.config.coinGains.some(g=>g.player===x.player&&g.round===x.round&&g.min>0)&&!model.config.coinSources.some(g=>g.player===x.player&&g.round===x.round));
     model.config.coinTransferRounds=[...new Set([...(base.config.coinTransferRounds||[]),...parsed.flatMap(p=>p.items).filter(i=>i.kind==='coinTransfer'||i.kind==='trajectory'&&i.tokens.some(t=>t.kind==='marker'&&/捕捉/.test(t.value))).map(i=>i.round).filter(r=>r!=null)])];
     // Look ahead in the same player's next two actions. An actual collision is impossible inside subspace.
     const routes=parsed.flatMap((p,index)=>p.items.filter(i=>i.kind==='trajectory'&&!i.skipReplay).map(item=>({item,index})));
@@ -279,15 +313,19 @@
       const p=parsed[index],summary=[],warnings=[...p.warnings],receiver=receiverFor(messages[index],p,defaultView);
       if(receiver!==(messages[index].view??defaultView))warnings.push(`这条声源私信原来归给了发声者本人，已自动按接收者 ${receiver} 号关联。`);
       for(const item of p.items){
+        if(item.kind==='birthBlock'){summary.push(item.player+'号出生区块排除所有逃生区块；仅约束出生位置，不限制之后走入逃生区块。');continue;}
+        if(item.kind==='noButtons'){summary.push('确认截至第 '+item.round+' 回合无人按过按钮；此前机关门保持初始状态。');continue;}
         if(item.kind==='feature'){summary.push(item.value==='JAMMERBOX'?'确认本局存在屏蔽器；屏蔽器可推动，未按初始中心强行定位。':'确认本局存在热源或小太阳；热浪范围受热源类型及箱子推动影响。');continue;}
         if(item.kind==='coins'){
           if(item.count!=null)summary.push(item.player+'号公开持有 '+item.count+' 枚金币');
           if(item.pickup){const label=item.player+'号'+(item.round?'第 '+item.round+' 回合':'本回合')+'获得'+(item.gained==null?'至少 1': ' '+item.gained)+' 枚金币';summary.push(label+(item.inferredRound?'（已关联此前行动）':'')+'；'+(!item.round?'请补充回合号以筛选路线。':model.config.coinTransferRounds.includes(item.round)?'本回合存在捕捉，暂保留抢夺来源，不强制踩到金币格。':'用于筛选当回合经过的未消耗金币格，重复经过同格不重复计数。'));}continue;
         }
+        if(item.kind==='coinSource'){summary.push(item.player+'号第 '+item.round+' 回合金币来自 '+item.block+' 号区块；按钮来源另行验证。');continue;}
+        if(item.kind==='playerButtons'){summary.push(item.player+'号第 '+item.round+' 回合触发按钮 '+item.count+' 次；与金币和完整行动共同筛选，优先核对提款机区块。');continue;}
         if(item.kind==='doorCount'){summary.push((item.round?'第 '+item.round+' 回合':'本回合')+'全体玩家共触发按钮 '+item.count+' 次'+(item.inferredRound?'（已关联此前行动）':'')+'；'+(item.round?'用于核对按钮落点总数及门状态。':'请补上【第 N 回合】以用于推理。'));continue;}
         if(item.kind==='coinTransfer'){summary.push('已记录金币抢夺'+(item.round?'，归属第 '+item.round+' 回合':'，回合待补充')+'；不把抢夺数量当作踩中金币格的次数。');continue;}
         if(item.kind==='status'){summary.push(item.player+'号：'+item.reason+'（赛况状态）');continue;}
-        if(item.kind==='identity'){summary.push(`按 ${metadata.self} 号视角推理`);continue;}
+        if(item.kind==='identity'){summary.push(item.spectator?'切换为观战，不代入任何玩家':`按 ${metadata.self} 号视角推理`);continue;}
         if(item.kind==='personalSound'){
           if(item.player===view&&item.linkedRound)summary.push(`${view}号第 ${item.linkedRound} 回合第 ${item.step} 步${item.sound==='PAPA'?'啪嗒声':'沙沙声'}${item.masked?'（心跳掩盖）':''}，已关联完整轨迹`);
           continue;
@@ -347,7 +385,7 @@
               space.remaining--;
               if(space.remaining>0){if(t.sound||t.terrain)branchErrors.push('亚空间第一步不会踩到地形并发声');seg().events.push({kind:'move',dir:t.dir,outcome:'space'});}
               else{
-                if(t.quiet&&!model.config.silent&&!(heartPossible&&(step-1)%3===0&&step<=19)||t.sound&&t.sound!=='PAPA')branchErrors.push('离开亚空间时应在出口发出啪嗒声');
+                if(t.quiet&&!model.config.silent&&!(heartPossible&&!t.confirmedQuiet&&(step-1)%3===0&&step<=19)||t.sound&&t.sound!=='PAPA')branchErrors.push('离开亚空间时应在出口发出啪嗒声');
                 seg().events.push({kind:'move',dir:t.dir,outcome:'space'},{kind:'teleport',dr:space.dr,dc:space.dc});
                 const at=pos();seg().events.push({kind:'observe',r:at.r,c:at.c,terrain:'PORTAL',sound:t.sound==='PAPA'?'PAPA':''});space=null;
                 steps.push({index,round,step,r:at.r,c:at.c,segment:model.active});
@@ -355,14 +393,17 @@
               moves++;continue;
             }
             const choiceKey=index+':'+item.at+':'+step,choice=choices[choiceKey];
+            const recoverHere=!!choices.__portalRecovery&&(!choices.__portalRecoveryRounds||choices.__portalRecoveryRounds.includes(round));
             const maskedUnknown=model.config.heartPresence===true&&step<=19&&(step-1)%3===0&&!t.merged&&!t.sound&&!t.terrain&&!item.hidden&&!t.beforeFirstSound;
-            const silentUnknown=model.config.silent&&!t.sound&&!t.terrain&&!item.hidden&&!t.beforeFirstSound;
+            const silentUnknown=model.config.silent&&recoverHere&&!t.sound&&!t.terrain&&!item.hidden&&!t.beforeFirstSound;
             // Only reopen missing information; confirmed silence, terrain and
             // the first-sound boundary must never be erased to invent a portal.
-            const recoveryUnknown=!!choices.__portalRecovery&&!t.sound&&!t.terrain&&!item.hidden&&!t.beforeFirstSound&&(!t.quiet||heartPossible&&!t.merged&&step<=19&&(step-1)%3===0);
+            const recoveryUnknown=recoverHere&&!t.sound&&!t.terrain&&!item.hidden&&!t.beforeFirstSound&&(!t.quiet||silentUnknown||heartPossible&&!t.confirmedQuiet&&!t.merged&&step<=19&&(step-1)%3===0);
             const requiresHeart=recoveryUnknown&&t.quiet&&!maskedUnknown&&!silentUnknown;
-            const possibleEntry=t.sound==='PAPA'||maskedUnknown||silentUnknown||recoveryUnknown||t.firstSound&&!t.sound;
-            seg().events.push({kind:'move',dir:t.dir,outcome:t.outcome,sound:t.sound,terrain:t.terrain,audible:!!t.audible,masked:!!t.masked,firstSound:!!t.firstSound,beforeFirstSound:!!t.beforeFirstSound,hidden:item.hidden,clock:{round,player:view,step},nonPortalSound:!!t.noSubspace&&possibleEntry&&t.outcome==='move',quiet:(t.quiet||t.beforeFirstSound)&&t.outcome==='move'&&!item.hidden&&!model.config.silent&&(t.beforeFirstSound||!(heartPossible&&!t.merged&&(step-1)%3===0&&step<=19))});
+            // The hypothesis pass enables silent branching before map inference.
+            // This preliminary replay alone is not proof of a walking-only route.
+            const possibleEntry=(!model.config.silent||recoverHere)&&(t.sound==='PAPA'||maskedUnknown||silentUnknown||recoveryUnknown||t.firstSound&&!t.sound);
+            seg().events.push({kind:'move',dir:t.dir,outcome:t.outcome,sound:t.sound,terrain:t.terrain,audible:!!t.audible,masked:!!t.masked,firstSound:!!t.firstSound,beforeFirstSound:!!t.beforeFirstSound,hidden:item.hidden,clock:{round,player:view,step},nonPortalSound:!!t.noSubspace&&t.outcome==='move',quiet:(t.quiet||t.beforeFirstSound)&&t.outcome==='move'&&!item.hidden&&!model.config.silent&&(t.beforeFirstSound||!(heartPossible&&!t.confirmedQuiet&&!t.merged&&(step-1)%3===0&&step<=19))});
             if(t.firstSound)summary.push(`第 ${step} 步为本局首次发声：此前未隐匿的移动排除会发声的地形，即使心跳掩盖也计入此前发声；本步不提供声源方向。`);
             const point=pos();steps.push({index,round,step,r:point.r,c:point.c,segment:model.active});
             if(t.outcome==='hit')hits++;else moves++;
@@ -376,14 +417,27 @@
             }
           }
           if(uncertain){
+            if(relocation&&!item.partial)seg().events.push({kind:'turn',clock:{round,player:view,step:1000000}});
             newSegment();
+            // A trailing collision is certain even when a portal made its
+            // absolute position unknown. Keep it in the unlocated fragment.
+            if(!relocation&&item.tokens.findLast(t=>t.kind!=='marker')?.kind==='move'){
+              const actions=[];let ordinal=0;
+              for(const token of item.tokens){if(token.kind==='move')actions.push({token,step:++ordinal});else if(token.kind==='hidden')ordinal+=token.steps||0;else if(token.step)ordinal++;}
+              const tail=[];for(let k=actions.length-1;k>=0&&actions[k].token.outcome==='hit';k--)tail.unshift(actions[k]);
+              for(const [k,a] of tail.entries()){
+                const previous=actions[actions.indexOf(a)-1]?.token;
+                seg().events.push({kind:'move',dir:a.token.dir,outcome:'hit',previousDir:k===0&&previous?.outcome==='move'?previous.dir:-1,clock:{round,player:view,step:a.step}});hits++;
+              }
+              if(tail.length){summary.push('未知位移后的撞击已保留在待定位片段，未强行连接出生点。');if(!item.partial)seg().events.push({kind:'turn',clock:{round,player:view,step:1000000}});}
+            }
             if(relocation)summary.push(relocation==='capture'?'捕捉后随机传送：已保留捕捉时的位置与同格线索，传送后开始新的待定位片段。':'已记录随机传送，传送后开始新的待定位片段。');
             if(!relocation||ambiguities.some(a=>a.index===index))warnings.push('出现水声 / 传送信息，后续可能包含亚空间位移。已保留整段原文，暂不把不确定路径硬接入地图；后续墙壁会定位新的片段。');
           }
           if(!item.partial&&!uncertain)seg().events.push({kind:'turn',clock:{round,player:view,step:1000000}});
           let clockStep=0;for(let si=0;si<model.segments.length;si++)for(const e of model.segments[si].events.slice(eventStarts[si]??0)){if(e.kind==='move')clockStep++;if(!e.clock)e.clock={round,player:view,step:clockStep};}
           metadata.round=Math.max(metadata.round,round);if(!item.partial)metadata.completed.add(round);
-          const at=pos();metadata.ends.set(round,{r:at.r,c:at.c,segment:model.active,inSpace:!!space,locatable:!uncertain});for(const o of metadata.pending.get(round)||[])putWalls(seg(),o,at,!!space);metadata.pending.delete(round);
+          const at=pos();metadata.ends.set(round,{r:at.r,c:at.c,segment:model.active,inSpace:!!space,locatable:!uncertain,complete:metadata.completed.has(round)});for(const o of metadata.pending.get(round)||[])putWalls(seg(),o,at,!!space);metadata.pending.delete(round);
           summary.push(`${item.player}号第 ${round} 回合：确认移动 ${moves} 步${hits?'，撞墙 '+hits+' 次':''}`);continue;
         }
         if(item.kind==='hear'){
@@ -396,9 +450,20 @@
       }
       reports.push({summary:[...new Set(summary)],warnings});
     }
+    if(parsed.some(p=>p.items.some(i=>i.kind==='birthBlock'&&i.player===view&&i.nonExit))){const middle=Math.floor(model.config.size/2);model.segments[0].events.unshift({kind:'observe',r:middle,c:middle,nonExitBlock:true});}
+    if(!ambiguities.length)for(const fact of model.config.confirmedBlocks||[])if(fact.player===view&&model.segments[fact.segment])model.segments[fact.segment].anchors.push(...fact.blocks.map(b=>({id:b.id,r:b.origin.r,c:b.origin.c})));
+    if(!ambiguities.length)for(const selection of model.config.confirmedEvents||[])if(selection.player===view){
+      for(const event of [...selection.coin,...selection.button]){
+        const matches=model.segments.flatMap((segment,index)=>E.replay(segment,model.config.size).observations.filter(o=>o.kind==='action'&&o.arrival&&o.clock?.player===view&&o.clock.round===selection.round&&o.clock.step===event.step).map(o=>({segment,index,o})));
+        if(!matches.length){branchErrors.push('已确认事件与当前路线不符');continue;}
+        const {segment,o}=matches[0];segment.anchors.push({id:event.block,r:E.mod(o.r-event.row+1,model.config.size),c:E.mod(o.c-event.col+1,model.config.size)});
+      }
+    }
     return {model,reports,self:metadata.self,pending:[...metadata.pending.keys()],steps,hears,ambiguities,branchErrors,space,lifecycle,roundEnds:[...metadata.ends].map(([round,end])=>({round,...end}))};
   }
   function build(base,messages,choicesByPlayer={}){
+    let observing=false;for(const m of messages)for(const i of parseCached(m.text).items)if(i.kind==='identity')observing=!!i.spectator;
+    if(observing){base=E.clone(base);base.segments=E.newState().segments;base.active=0;}
     const parsed=prepare(messages);let self=0,count=base.config.playerCount||base.players.length||4,highest=0;
     for(let k=0;k<parsed.length;k++){if(messages[k].view!=null&&parsed[k].items.some(i=>i.kind==='walls'||i.kind==='hear'))highest=Math.max(highest,messages[k].view);for(const i of parsed[k].items){if(i.kind==='identity')self=i.id;if(i.kind==='config'&&i.values.playerCount)count=i.values.playerCount;if(i.player!=null)highest=Math.max(highest,i.player);}}
     if(!Number.isInteger(count)||count<1||count>8)throw new Error('玩家人数应为 1–8。');
@@ -408,6 +473,38 @@
     for(const v of views){v.model.config.playerCount=count;
       if(v.model.config.exitCount==null)v.model.config.exitCount=Math.min(E.pool(v.model.config).filter(b=>b.id.startsWith('E')).length,v.model.config.size===12?4:Math.max(1,Math.floor(count/2)));
       v.model.players=Array.from({length:count},(_,id)=>base.players[id]||{name:id+'号',alive:true});}
+    for(const v of views)v.model.config.zeroCoinTurns=[];
+    // A public total belongs to all players. Attribute its remainder only when
+    // the other players' complete, non-teleporting routes prove their counts.
+    for(const [roundText,total] of Object.entries({...Object.fromEntries((views[0].model.config.coinGains||[]).map(g=>[g.round,0])),...(views[0].model.config.buttonCounts||{})})){
+      const round=+roundText;
+      const exact=views.map(v=>{
+        const stated=v.model.config.playerButtonCounts?.find(x=>x.player===v.id&&x.round===round);if(stated)return stated.count;
+        if(v.model.segments.length!==1||v.ambiguities.length)return null;
+        const segment=v.model.segments[0],events=segment.events;
+        if(events.some(e=>e.kind==='teleport'||e.kind==='move'&&e.outcome==='move'&&e.clock?.round<=round&&!e.nonPortalSound&&!e.quiet))return null;
+        const observations=E.replay(segment,v.model.config.size).observations,part=observations.filter(o=>o.clock?.round===round),actions=part.filter(o=>o.kind==='action');
+        if(!part.some(o=>o.kind==='turnEnd')||!actions.length)return null;
+        const steps=new Set(actions.map(o=>o.clock.step));if(!Array.from({length:Math.max(...steps)},(_,i)=>i+1).every(step=>steps.has(step)))return null;
+        let minimum=0,maximum=0,coinPossible=false;
+        for(const o of actions.filter(o=>o.arrival)){
+          const matches=E.matchBlocks(v.model.config,observations,o).matches;if(!matches.length)return null;
+          if(matches.some(m=>m.block.cells[m.lr*3+m.lc].attach==='COIN'))coinPossible=true;
+          if(matches.some(m=>m.block.cells[m.lr*3+m.lc].attach==='BUTTON'))maximum++;
+          if(matches.every(m=>m.block.cells[m.lr*3+m.lc].attach==='BUTTON'))minimum++;
+        }
+        if(!coinPossible)for(const target of views)target.model.config.zeroCoinTurns.push({player:v.id,round});
+        return minimum===maximum?minimum:null;
+      });
+      const unknown=exact.flatMap((value,id)=>value==null?[id]:[]),known=exact.reduce((sum,value)=>sum+(value??0),0);
+      if(total>0&&unknown.length===1&&known<=total){const player=unknown[0],count=total-known;
+        for(const v of views)if(!v.model.config.playerButtonCounts.some(x=>x.player===player&&x.round===round))v.model.config.playerButtonCounts.push({player,round,count,inferred:true});
+      }
+    }
+    for(const v of views){
+      if(Object.values(v.model.config.buttonCounts||{}).some(n=>n>0))v.model.config.requiredFeatures=[...new Set([...(v.model.config.requiredFeatures||[]),'BUTTON'])];
+      v.model.config.preferATM=v.model.config.playerButtonCounts.some(x=>x.count>0&&v.model.config.coinGains.some(g=>g.player===x.player&&g.round===x.round&&g.min>0)&&!v.model.config.coinSources.some(g=>g.player===x.player&&g.round===x.round));
+    }
     const relations=[];
     for(const v of views)for(const h of v.hears){
       if(h.a===h.b){v.reports[h.index].warnings.push('声源与私信接收者相同，方向未用于推理；请在输入预览中确认这是谁收到的私聊赛况。');continue;}
@@ -445,11 +542,11 @@
       }
       v.model.segments[si].sounds=sounds;
     }
-    const players=Array.from({length:count},(_,id)=>({name:id+'号',alive:base.players[id]?.alive!==false})),events=views.flatMap(v=>v.lifecycle).sort((a,b)=>a.round-b.round||a.player-b.player||a.step-b.step),captures=[];
+    const players=Array.from({length:count},(_,id)=>({name:id+'号',alive:base.players[id]?.alive!==false})),events=views.flatMap(v=>v.lifecycle).sort((a,b)=>a.round-b.round||a.player-b.player||a.step-b.step),captures=[],coinRetirements={};
     for(const event of events){
-      if(event.kind==='retire'){players[event.player].alive=false;players[event.player].reason=event.reason;continue;}
+      if(event.kind==='retire'){players[event.player].alive=false;players[event.player].reason=event.reason;coinRetirements[event.player]={round:event.round,player:event.player};continue;}
       if(event.kind==='escape'&&event.brawl)continue;
-      if(event.kind==='escape'){players[event.player].alive=false;players[event.player].reason='已逃生';continue;}
+      if(event.kind==='escape'){players[event.player].alive=false;players[event.player].reason='已逃生';coinRetirements[event.player]={round:event.round,player:event.player};continue;}
       const target=E.targets(players,views[event.player].model.config.captureTarget||base.target)[event.player];
       if(target==null)continue;
       const before=event.round-(target>event.player?1:0),end=views[target].roundEnds.find(e=>e.round===before),middle=Math.floor(views[event.player].model.config.size/2);
@@ -457,15 +554,17 @@
       const targetRoute=at&&views[target].model.segments[at.segment],validTarget=at&&!at.inSpace&&(before===0||targetRoute?.events.some(e=>e.kind==='turn'&&e.clock?.round===before));
       const capture={...event,target,aligned:!!(event.locatable&&validTarget)};captures.push(capture);
       if(capture.aligned)relations.push({kind:'capture',a:event.player,b:target,aNode:event.player+':'+event.segment,bNode:target+':'+at.segment,listener:{r:event.r,c:event.c},source:{r:at.r,c:at.c},direction:'同格',round:event.round});
-      if(!event.protected){players[target].alive=false;players[target].reason='被'+event.player+'号捕捉';}
+      if(!event.protected){players[target].alive=false;players[target].reason='被'+event.player+'号捕捉';coinRetirements[target]={round:event.round,player:event.player};}
     }
     // Snapshot headers describe current status, not the time of earlier captures.
     for(const p of parsed)for(const item of p.items)if(item.kind==='status'){players[item.player].alive=false;players[item.player].reason=item.reason;}
     for(const p of parsed)for(const item of p.items)if(item.kind==='coins'&&item.count!=null)players[item.player].coins=item.count;
-    for(const v of views)v.model.players=E.clone(players);
+    for(const v of views){v.model.players=E.clone(players);v.model.config.coinRetirements=coinRetirements;}
     const reports=messages.map((m,k)=>{const owners=new Set(parsed[k].items.filter(i=>i.kind==='trajectory').map(i=>i.player)),owner=owners.size===1?[...owners][0]:null;return views[parsed[k].snapshot?receiverFor(m,parsed[k],self):owner??receiverFor(m,parsed[k],self)]?.reports[k]||views[self].reports[k];});
     if(count>requested&&reports.length)reports.at(-1).warnings.push('已有 '+(count-1)+' 号玩家的信息，人数至少为 '+count+'；保留这些信息并自动补齐视角。');
-    const main=views[self];return {...main,self,views,count,relations,reports,captures,players};
+    let spectator=false;for(const p of parsed)for(const i of p.items)if(i.kind==='identity')spectator=!!i.spectator;
+    const selections=(base.config.confirmedEvents||[]).filter(e=>!views[e.player]?.ambiguities.length);for(const v of views)v.model.config.eventSelections=selections;
+    const main=views[self];return {...main,self,spectator,views,count,relations,reports,captures,players};
   }
   function openingPool(text,mode,unknownSpecial=false){
     const tokens=text.trim().toUpperCase().replace(/(?:本局区块池|区块池)\s*[:：]/g,'').split(/[\s,，、;；]+/).filter(Boolean);
@@ -477,16 +576,19 @@
   }
   // The live UI consumes this projection; original journal text stays exportable.
   function liveMessages(messages){
+    let spectator=false;for(const m of messages)for(const i of parseCached(m.text).items)if(i.kind==='identity')spectator=!!i.spectator;
     let self=0;for(const m of messages)for(const i of parseCached(m.text).items)if(i.kind==='identity')self=i.id;
     return messages.map(m=>{
       const p=inspect(m.text),foreign=(m.view??self)!==self;
       const foreignDetail=p.items.some(i=>i.kind==='trajectory'&&(i.player!==self&&i.tokens.some(t=>t.masked||t.terrain)||i.player===self&&i.tokens.some(t=>t.direction&&!['首次','被屏蔽'].includes(t.direction))));
       const privateData=p.items.some(i=>['hear','personalSound','feature'].includes(i.kind)||i.kind==='walls'&&i.player==null||i.kind==='trajectory'&&i.tokens.some(t=>t.direction||t.masked||t.terrain));
-      if(foreignDetail||foreign&&privateData)return {...m,text:'附注：此段含他人私聊或赛后专属信息，已隔离；请补贴公屏原文。',excluded:true};
+      if(spectator&&privateData||foreignDetail||foreign&&privateData)return {...m,text:'附注：此段含他人私聊或赛后专属信息，已隔离；请补贴公屏原文。',excluded:true};
       return {...m,view:self,receiverConfirmed:true};
     });
   }
   function soundChecklist(messages){
+    let spectator=false;for(const m of messages)for(const i of parseCached(m.text).items)if(i.kind==='identity')spectator=!!i.spectator;
+    if(spectator)return [];
     const live=liveMessages(messages),parsed=prepare(live);let self=0;
     for(const p of parsed)for(const i of p.items)if(i.kind==='identity')self=i.id;
     const routes=parsed.flatMap((p,index)=>p.items.filter(i=>i.kind==='trajectory').map(item=>({item,index})));
@@ -506,11 +608,25 @@
         const heard=hears.some(h=>h.player===route.player&&h.step===step&&h.round===route.round);
         if(heard||t.firstSound)continue;
         rows.push({player:route.player,round:route.round,step,sound:t.sound,earlier,
-          state:'首次发声，未听到方位（默认，待核对）',
+          state:'方位私聊尚未确认',
           prompt:route.player+'号第'+route.round+'回合第'+step+'步：请粘贴公屏该步的完整提示（含是否首次发声），或者你自己私聊收到的方位；保留回合、玩家编号和步数。'+(earlier?'此前已有发声记录，请特别核对这一步未听到方位的原因。':'')});
       }
     }
     return rows;
+  }
+  function informationQuestions(messages,config){
+    const live=liveMessages(messages),parsed=prepare(live);let self=0,spectator=false;
+    for(const p of parsed)for(const i of p.items)if(i.kind==='identity'){self=i.id;spectator=!!i.spectator;}
+    if(spectator||config.silent)return [];
+    const rows=soundChecklist(messages).map(r=>({...r,kind:'direction'}));
+    if(config.heartPresence!==false&&E.pool(config).some(b=>b.cells.some(c=>c.type==='HEART'))){
+      for(const p of parsed)for(const route of p.items.filter(i=>i.kind==='trajectory'&&i.player===self&&!i.skipReplay&&!i.hidden)){
+        let step=0;for(const t of route.tokens){if(t.kind==='hidden'){step+=t.steps||0;continue;}if(t.kind!=='move')continue;step++;
+          if(t.outcome==='move'&&!t.merged&&!t.sound&&!t.terrain&&!t.masked&&step<=19&&(step-1)%3===0)rows.push({kind:'heartbeat',player:self,round:route.round,step,prompt:'这一步可能有被心跳掩盖的地形声，请核对自己收到的私聊。'});
+        }
+      }
+    }
+    return rows.map(r=>({...r,key:r.kind+':'+r.player+':'+r.round+':'+r.step})).filter(r=>!messages.some(m=>m.text.includes('线索确认 '+r.key+'：未收到'))).sort((a,b)=>b.round-a.round||b.step-a.step);
   }
   function inspect(text){
     const parsed=parseCached(text),items=parsed.items,counts={};for(const item of items)counts[item.kind]=(counts[item.kind]||0)+1;
@@ -518,5 +634,5 @@
     const type=parsed.snapshot?(privateInput?'私聊完整赛况':'公开完整赛况'):counts.firstSound?'首次发声线索':counts.hear?'声响私信':counts.walls?'墙壁信息':counts.trajectory?'行动轨迹':counts.config?'对局设置':counts.coins?'金币线索':counts.doorCount?'门变化公告':counts.coinTransfer?'金币抢夺':counts.feature?'特殊地形提示':'附注';
     return {...parsed,counts,privateInput,type};
   }
-  const api={soundChecklist,liveMessages,inspect,openingPool,parse:parseCached,build,buildHypothesis:buildOne,clean,receiverFor};if(typeof module!=='undefined')module.exports=api;else root.LongNightMessages=api;
+  const api={informationQuestions,soundChecklist,liveMessages,inspect,openingPool,parse:parseCached,build,buildHypothesis:buildOne,clean,receiverFor};if(typeof module!=='undefined')module.exports=api;else root.LongNightMessages=api;
 })(globalThis);

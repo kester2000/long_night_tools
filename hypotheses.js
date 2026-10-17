@@ -1,5 +1,6 @@
-(function(root){
+(function longNightModule(root){
   'use strict';
+  (root.LongNightSources ||= {})['hypotheses.js']=longNightModule.toString();
   const E=typeof module!=='undefined'?require('./engine.js'):root.LongNight;
   const M=typeof module!=='undefined'?require('./messages.js'):root.LongNightMessages;
   const signature=o=>JSON.stringify(Object.fromEntries(Object.entries(o).filter(([k])=>k!=='index')));
@@ -24,12 +25,16 @@
   }
   const effectiveConfig=(config,model)=>({...config,heartPresence:model.config.heartPresence??config.heartPresence});
   function search(config,base,messages,player,self,maxCases=null,initialChoices={}){
+    const automaticBudget=maxCases==null;
     maxCases??=config.silent?512:96;
     const replayChoices=choices=>M.buildHypothesis(base,messages,player,self,choices,{heartPresence:config.heartPresence});
     const initial=replayChoices(initialChoices),first=initial.ambiguities[0];
     if(!first)return null;
-    const segment=first.segment,queue=[{choices:initialChoices,kind:null}],cases=[],rejections={ground:new Set(),portal:new Set()},cache=new Map();let visits=0;
+    const resume=config.routeCheckpoint;
+    const segment=first.segment,queue=resume?resume.states.map(s=>({choices:{...initialChoices,...s.choices},kind:s.kind})): [{choices:initialChoices,kind:null}],cases=[],rejections={ground:new Set(),portal:new Set()},cache=new Map();let visits=0;
+    function checkpoint(){config.onRouteCheckpoint?.({states:[...cases.filter(c=>!c.pending).map(c=>({choices:c.choices,kind:c.kind})),...queue],visited:(resume?.visited||0)+visits,exhausted:queue.length===0});}
     function crossFits(choices){
+      if(config.independentPerspective)return true;
       const b=M.build(base,messages,{[player]:choices}),groups=new Map();
       const crossConfig=effectiveConfig(config,b.model);
       for(const h of b.relations.filter(h=>!['首次','被屏蔽'].includes(h.direction)&&(h.a===player||h.b===player))){const k=h.aNode+'|'+h.bNode;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(h);}
@@ -49,40 +54,58 @@
       const branchConfig=effectiveConfig(config,model);
       const results=model.segments.map(s=>{
         const replay=E.replay(s,config.size),key=JSON.stringify([branchConfig.heartPresence,replay.observations,s.anchors]);
-        if(!cache.has(key)){const solution=E.solveMap(branchConfig,replay.observations,s.anchors),proof=E.verifyCompleteLayout(branchConfig,solution,replay.observations,3000);cache.set(key,{solution,proof});}
+        if(!cache.has(key)){const solution=E.solveMap(branchConfig,replay.observations,s.anchors),proof=E.verifyCompleteLayout(branchConfig,solution,replay.observations,3000);if(cache.size>=64)cache.delete(cache.keys().next().value);cache.set(key,{solution,proof});}
         return {replay,...cache.get(key)};
       });return results;
     }
     // Prove the whole no-portal explanation separately. A first-step "ground"
     // branch can still contain later portals, and an unfinished breadth-first
     // search must not hide an already provable contradiction in walking alone.
-    let walkingChoices=initialChoices.__portalRecovery?{__portalRecovery:true}:{},walking=replayChoices(walkingChoices),walkingSteps=0;
+    let walkingChoices=Object.fromEntries(Object.entries(initialChoices).filter(([k])=>k.startsWith('__'))),walking=replayChoices(walkingChoices),walkingSteps=0;
     while(walking.ambiguities.length&&walkingSteps++<512){
       walkingChoices[walking.ambiguities[0].key]={kind:'ground'};
       walking=replayChoices(walkingChoices);
     }
     const walkingResults=walking.ambiguities.length?[]:solve(walking.model);
     const groundOnly={status:walking.ambiguities.length?'unknown':walking.branchErrors.length||walkingResults.some(r=>r.proof.status==='impossible')?'impossible':walkingResults.every(r=>r.proof.status==='verified')?'verified':'unknown'};
+    if(automaticBudget&&groundOnly.status!=='impossible')maxCases=Math.min(maxCases,96);
     function expand(state,built){
       const a=built.ambiguities[0],at=E.replay(built.model.segments[a.segment],config.size);
       const matches=E.matchBlocks(effectiveConfig(config,built.model),at.observations,a.entry).matches,links=new Map();
       for(const m of matches){const link=m.block.cells[m.lr*3+m.lc].portal;if(link)links.set(link.join(','),{kind:'portal',dr:link[0],dc:link[1],...(a.requiresHeart?{requiresHeart:true}:{})});}
       const choices=[{kind:'ground'},...links.values()];
-      for(const choice of choices)queue.push({kind:state.kind||choice.kind,choices:{...state.choices,[a.key]:choice}});
+      // Interactive inference first follows one route to its end. Breadth-first
+      // expansion of long silent walks otherwise spends the budget on prefixes.
+      for(const choice of config.witnessFirst?[...choices].reverse():choices)queue.push({kind:state.kind||choice.kind,choices:{...state.choices,[a.key]:choice}});
       if(!state.kind&&!links.size)rejections.portal.add('入口附近没有匹配的配对传送门区块');
     }
     while(queue.length&&visits<maxCases){
       visits++;
-      const state=queue.shift(),built=replayChoices(state.choices);
+      const state=config.witnessFirst?queue.pop():queue.shift();let processed=false;
+      try{
+      const built=replayChoices(state.choices);
+      processed=true;
       if(built.branchErrors.length){built.branchErrors.forEach(s=>rejections[state.kind]?.add(s));continue;}
       const results=solve(built.model);
       if(results.some(r=>r.proof.status==='impossible')){rejections[state.kind]?.add('与后续地形、墙壁或完整地图约束不符');continue;}
       if(built.ambiguities.length){expand(state,built);continue;}
       if(!crossFits(state.choices)){rejections[state.kind]?.add('与其他玩家的声源方位或捕捉同格位置矛盾');continue;}
       cases.push({...state,built,results});
+      // Keep searching after a witness: only exhausting the remaining branches
+      // can resolve a portal. The shared deadline still bounds interactive work.
+      if(config.witnessFirst&&queue.length>6&&results.every(r=>r.proof.status==='verified'))break;
+      }catch(error){processed=false;throw error;}
+      finally{if(!processed)queue.unshift(state);if(!processed||visits%16===0)checkpoint();}
     }
+    checkpoint();
     // Unsearched branches remain explicit possibilities; they never establish certainty.
-    for(const state of queue){const built=replayChoices(state.choices);if(!built.branchErrors.length)cases.push({...state,built,results:solve(built.model),pending:true});}
+    // Keep a common unresolved prefix per group instead of solving every queued
+    // branch after the budget is exhausted. Pending work cannot prove a fact.
+    for(const kind of ['ground','portal']){
+      const states=queue.filter(s=>s.kind===kind);if(!states.length)continue;
+      const choices=Object.fromEntries(Object.entries(states[0].choices).filter(([k,v])=>states.every(s=>JSON.stringify(s.choices[k])===JSON.stringify(v))));
+      const built=replayChoices(choices);cases.push({kind,choices,built,results:solve(built.model),pending:true});
+    }
     const groups=['ground','portal'].map(kind=>{
       const worlds=cases.filter(c=>c.kind===kind),pending=worlds.some(c=>c.pending),reasons=[...rejections[kind]];
       if(!worlds.length)return {kind,excluded:true,reasons};
@@ -98,7 +121,7 @@
       for(const w of worlds){
         const m=w.results[segment],r=m.replay,space=w.built.space;
         const entryMatches=E.globallyFilter(E.matchBlocks(config,r.observations,first.entry),m.solution).matches;
-        const alternative={observations:r.observations,trace:r.trace,solution:m.solution,
+        const alternative={choices:w.choices,observations:r.observations,trace:r.trace,solution:m.solution,
           positions:w.built.model.active===segment?[{r:r.r,c:r.c,inSpace:!!space}]:[],inSpace:!!space,remaining:space?[space.remaining]:[],
           pending:!!w.pending||m.proof.status!=='verified',verification:{status:w.pending?'unknown':m.proof.status,blocks:w.pending?[]:m.proof.blocks},
           entryBlocks:[...new Set(entryMatches.map(m=>m.id))],
@@ -131,21 +154,47 @@
       }
       portalViews.afterAlternatives=[...unique.values()];
     }
+    // Examples are complete witness layouts, never intersections of different routes.
+    function examples(result,limit){
+      if(!result||result.proof.status!=='verified')return [];
+      const birthConfig=segment===0?{...config,births:[{r:Math.floor(config.size/2),c:Math.floor(config.size/2),player}]}:config;
+      const proof=E.verifyCompleteLayout(birthConfig,result.solution,result.replay.observations,1000,{limit});
+      return (proof.layouts||[proof.layout]).filter(Boolean).slice(0,limit).map(blocks=>({
+        blocks,observations:result.replay.observations,focus:{r:result.replay.r,c:result.replay.c},
+        teleports:result.replay.log.filter(e=>e.kind==='teleport').map(e=>({r:e.r,c:e.c,round:e.clock?.round,step:e.clock?.step})),
+        unique:!!proof.complete&&proof.layouts?.length===1
+      }));
+    }
+    const walkingExamples=examples(walkingResults[segment],1),portalExamples=[];
+    const portalCases=cases.filter(c=>!c.pending&&c.results.every(r=>r.proof.status==='verified')&&c.built.model.segments.some(s=>s.events.some(e=>e.portalLink)));
+    for(const c of portalCases){
+      if(portalExamples.length>=3)break;
+      portalExamples.push(...examples(c.results[segment],3-portalExamples.length));
+    }
+    const portalStatus=portalCases.length?'possible':queue.length||cases.some(c=>c.pending||c.results.some(r=>r.proof.status!=='verified'))?'unknown':'excluded';
     const requiresPortal=groundOnly.status==='impossible'&&cases.some(c=>!c.pending&&c.results.every(r=>r.proof.status==='verified')&&c.built.model.segments.some(s=>s.events.some(e=>e.portalLink)));
-    return {player,segment,round:first.round,step:first.step,maskedUnknown:first.maskedUnknown,silentUnknown:first.silentUnknown,recoveryUnknown:first.recoveryUnknown,recovery:initialChoices.__portalRecovery?'missing':null,entry:first.entry,groups,truncated:queue.length>0,resolvedChoices,confirmedPortal,portalViews,groundOnly,requiresPortal,search:{visited:visits,budget:maxCases,pending:queue.length}};
+    return {player,segment,round:first.round,step:first.step,maskedUnknown:first.maskedUnknown,silentUnknown:first.silentUnknown,recoveryUnknown:first.recoveryUnknown,recovery:initialChoices.__portalRecovery?'missing':null,entry:first.entry,groups,truncated:queue.length>0,resolvedChoices,confirmedPortal,portalViews,groundOnly,walkingExamples,portalExamples,portalStatus,walkingObservations:walkingResults[segment]?.replay.observations,requiresPortal,search:{visited:visits,budget:maxCases,pending:queue.length}};
   }
   function analyze(config,base,messages,player,self,maxCases=null,initialChoices={}){
     const run=choices=>search(config,base,messages,player,self,maxCases,choices);
+    // Silent movement never proves walking. Search unannounced portals even
+    // when a walking-only map exists, before publishing any map deductions.
+    if(config.silent&&!initialChoices.__portalRecovery){
+      const seed={__portalRecovery:true},proactive=run(seed);
+      if(proactive)return {...proactive,recovery:'silent',reopenedChoices:seed};
+    }
+    let impossibleRounds=[];
     let result=run(initialChoices);
     // Budget exhaustion is uncertainty, not a contradiction. Reopen choices
     // only after the current explanation has actually been disproved.
     if(result){if(result.truncated||result.groups.some(g=>!g.excluded))return result;}
     else{
       const built=M.buildHypothesis(base,messages,player,self,initialChoices,{heartPresence:config.heartPresence});
-      const impossible=built.branchErrors.length||built.model.segments.some(s=>{
+      impossibleRounds=built.model.segments.flatMap(s=>{
         const observations=E.replay(s,config.size).observations,cfg=effectiveConfig(config,built.model);
-        return E.verifyCompleteLayout(cfg,E.solveMap(cfg,observations,s.anchors),observations,3000).status==='impossible';
+        return E.verifyCompleteLayout(cfg,E.solveMap(cfg,observations,s.anchors),observations,3000).status==='impossible'?[...new Set(observations.map(o=>o.clock?.round).filter(r=>r>0))]:[];
       });
+      const impossible=built.branchErrors.length||impossibleRounds.length;
       if(!impossible)return null;
     }
     if(Object.keys(initialChoices).some(k=>!k.startsWith('__'))){
@@ -153,14 +202,14 @@
       if(reopened){result={...reopened,recovery:'reopened',reopenedChoices:seed};if(reopened.truncated||reopened.groups.some(g=>!g.excluded))return result;}
     }
     if(!initialChoices.__portalRecovery){
-      const seed={__portalRecovery:true},recovered=run(seed);
+      const seed={__portalRecovery:true,...(config.silent&&impossibleRounds.length?{__portalRecoveryRounds:impossibleRounds}:{})},recovered=run(seed);
       if(recovered)return {...recovered,recovery:'missing',reopenedChoices:seed};
     }
     return result;
   }
   // Shared by Worker and file:// fallback; compare updates to avoid rebuild loops.
   function choiceUpdates(hypotheses,previous={}){
-    const updates=hypotheses.map(h=>[h.player,h.resolvedChoices||h.reopenedChoices]).filter(([id,c])=>c&&JSON.stringify(c)!==JSON.stringify(previous[id]||{}));
+    const updates=hypotheses.map(h=>[h.player,h.resolvedChoices||(h.recovery==='silent'?null:h.reopenedChoices)]).filter(([id,c])=>c&&JSON.stringify(c)!==JSON.stringify(previous[id]||{}));
     return updates.length?{...previous,...Object.fromEntries(updates)}:null;
   }
   function all(config,notebook){return Array.from({length:notebook.count},(_,id)=>analyze(config,notebook.base,notebook.messages,id,notebook.self,null,notebook.choices?.[id]||{})).filter(Boolean);}
@@ -170,11 +219,18 @@
   function constrainNodes(nodes,relations,hypotheses){
     const uncertain=new Set();
     const constrained=nodes.map(node=>{
+      const unresolved=hypotheses.find(h=>!h.resolvedChoices&&!h.confirmedPortal&&node.id===h.player+':'+h.segment&&h.groups.some(g=>!g.excluded));
+      if(unresolved){
+        uncertain.add(node.id);
+        const observations=node.observations.filter(o=>!o.clock||o.clock.round<unresolved.round||o.clock.round===unresolved.round&&o.clock.step<=unresolved.step);
+        return {...node,observations,walkingObservations:unresolved.walkingObservations||node.observations,focus:{...unresolved.entry},histories:[],previous:null,routePending:true,
+          routeAlternatives:unresolved.groups.filter(g=>!g.excluded).flatMap(g=>g.alternatives||[])};
+      }
       const h=hypotheses.find(h=>h.confirmedPortal&&!h.resolvedChoices&&h.portalViews&&node.id===h.player+':'+h.segment);
       if(!h)return node;
       uncertain.add(node.id);
       const observations=[...h.portalViews.before.observations,{kind:'terrain',r:h.entry.r,c:h.entry.c,value:'PORTAL'}];
-      return {...node,observations,focus:{...h.entry},histories:[],previous:null,portalPrefix:true,
+      return {...node,observations,walkingObservations:h.walkingObservations||node.observations,focus:{...h.entry},histories:[],previous:null,portalPrefix:true,routePending:true,
         portalAlternatives:h.groups.find(g=>g.kind==='portal').alternatives};
     });
     // Original relations after the entrance use the obsolete walking position.

@@ -13,7 +13,8 @@ test('confirmed entry constrains ordinary local candidates even with multiple pa
  const candidates=[...local.singles,...local.doubles,...local.triples,...local.expanded];assert(candidates.length>0);
  for(const c of candidates){assert(c.observations.some(o=>o.kind==='hit'));assert(h.groups[1].alternatives.some(a=>a.positions.some(p=>p.r===c.patternFocus.r&&p.c===c.patternFocus.c)));}
  assert(h.groups.find(g=>g.kind==='portal').alternatives.length>1);
- assert.strictEqual(H.constrainNodes(original,relations,[{...h,confirmedPortal:false}]).nodes.find(n=>n.id==='2:0'),original.find(n=>n.id==='2:0'));
+ const uncertain=H.constrainNodes(original,relations,[{...h,confirmedPortal:false}]).nodes.find(n=>n.id==='2:0');
+ assert(uncertain.routePending);assert(uncertain.routeAlternatives.length);assert(uncertain.walkingObservations.length);
 });
 test('portal candidates stop at the paired exit and require a lower block when the exit has no bottom wall',()=>{
  const config={...E.newState().config,pool:'2 4 9 11 12 13 23 45 46 47 48 51 E1 E4 E7 E8'};

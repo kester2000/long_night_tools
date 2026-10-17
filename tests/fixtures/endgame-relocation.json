@@ -1,0 +1,221 @@
+{
+  "version": 2,
+  "base": {
+    "version": 1,
+    "config": {
+      "size": 9,
+      "mode": "TWIST",
+      "pool": "",
+      "event": "NONE",
+      "dynamicDoors": true,
+      "silent": false,
+      "exitCount": null
+    },
+    "segments": [
+      {
+        "name": "初始轨迹",
+        "events": [],
+        "sounds": [],
+        "anchors": []
+      }
+    ],
+    "active": 0,
+    "notes": "",
+    "players": [
+      {
+        "name": "0号",
+        "alive": true
+      },
+      {
+        "name": "1号",
+        "alive": true
+      },
+      {
+        "name": "2号",
+        "alive": true
+      },
+      {
+        "name": "3号",
+        "alive": true
+      }
+    ],
+    "target": "PREVIOUS"
+  },
+  "messages": [
+    {
+      "id": "a7aa4501-ea7c-46d4-9cbe-431e69e3b939",
+      "text": "玩家人数：3",
+      "view": 0
+    },
+    {
+      "id": "d84b6431-c25e-43a8-9e7d-71554c4b53b8",
+      "text": "模式幻变\n区块池：默认",
+      "view": 0
+    },
+    {
+      "id": "25cd786f-880a-4bb3-a6f7-955737f85041",
+      "text": "我是0号",
+      "view": 0
+    },
+    {
+      "id": "a55aac5e-e04d-47d1-aac3-0a2bf5f08cd3",
+      "text": "静音开启",
+      "view": 0
+    },
+    {
+      "id": "04cd0580-eba8-4ee9-917d-34c1e81ca73f",
+      "text": "大乱斗开启",
+      "view": 0
+    },
+    {
+      "id": "8da01813-425c-43ec-ad73-ce294d1c7311",
+      "text": "区块池：5 9 10 13 14 23 24 46 47 48 49 50 E1 E4 E15 E16",
+      "view": 0
+    },
+    {
+      "id": "6d9a5a8e-e5b5-4380-a278-8dee9e33d3b8",
+      "text": "【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空墙",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "7b584ec2-d2cf-48bf-a65f-a07b5cf6cc7a",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n←↓(→撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "d740b1a0-0bd6-4104-ac76-dfb6149fc0ec",
+      "text": "【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "c95dd448-3084-4537-b24b-103748553a81",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↑↑(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "937e94bb-58d6-4831-b99f-ac46e0e165a8",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n↑↓↑(↑撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "ea03de52-477e-4042-a99f-cfe90fdce843",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "586b2ac0-42ae-478a-ba7f-c77b6add5dbe",
+      "text": "【第 2 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "68088310-b991-459a-a7e9-1261ad0fa635",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↑→→↓↑↑(↑撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "6b09ca1f-4e45-4b55-8c9f-4e4deb444ab3",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n↓↑→←→(↓撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "b5db8939-a3e4-410a-9306-3999a03aa463",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↑→↑→↑↑(→撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "a4029e7c-1fc3-4201-99a6-1124cac02c60",
+      "text": "【第 3 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "3d7f5cb9-df53-4235-bb1a-c092c1d3a038",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↓×5←(↑撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "df0f5927-637b-4c9c-b4c7-3a3c3b2d9071",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "b6af2fbb-e665-4bd9-a072-00d4b09b1c44",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↑→→↑(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "024cd778-9bb0-41ae-8e08-0485316f3bb1",
+      "text": "【第 4 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n墙空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "e2a067d2-9b11-47ca-b810-1c3b18469741",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n→↑→↑(→撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "2e1a17fb-7b14-43d6-aed8-7b33f9f56df2",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n↑×4→↑(→撞)(捕捉)[传送]",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "3c198f8f-b759-4056-8dd8-91af1bc10030",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↓×5←↑(逃生)[传送]",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "6758c80f-08b7-4794-bd18-a30f8c87e2d5",
+      "text": "【第 5 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "30996468-df48-460b-93c7-3bee45483531",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n→(→撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "c61015a0-63d9-4ad5-95ed-833de576c849",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↓(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "822c4b3a-a0c7-43a3-8c68-099a535b051e",
+      "text": "【第 6 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空墙空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "fee3c53e-6619-413e-aaa2-daf65eeefd9c",
+      "text": "[2号]玩家本回合的完整行动轨迹：\n←×3↓←(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "faa9b081-9878-4aa7-a57b-38ce84b5194c",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n(停止)",
+      "view": 0,
+      "receiverConfirmed": true
+    }
+  ],
+  "view": 0
+}

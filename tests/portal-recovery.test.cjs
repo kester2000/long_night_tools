@@ -39,12 +39,12 @@ test('no additional portal is invented when the confirmed exit collision is itse
  const f=fixture();f.messages[1].text=f.messages[1].text.replace('(↓撞)','(←撞)');
  const h=f.analyze();assert(h.groups.every(g=>g.excluded));assert.equal(h.resolvedChoices,null);assert.equal(h.requiresPortal,false);
 });
-test('the saved zero-player route automatically rolls back a stale all-ground choice',()=>{
+test('silent search proactively reopens a previously assumed walking route',()=>{
  const journal=require('./fixtures/silent-zero-portal.json'),messages=M.liveMessages(journal.messages),built=M.build(journal.base,messages);
  let old={},b=M.buildHypothesis(journal.base,messages,0,1,old);
  while(b.ambiguities.length){old[b.ambiguities[0].key]={kind:'ground'};b=M.buildHypothesis(journal.base,messages,0,1,old);}
  const h=H.analyze(built.model.config,journal.base,messages,0,1,null,old);
- assert.equal(h.recovery,'reopened');assert(h.resolvedChoices);assert(h.requiresPortal);
+ assert.equal(b.ambiguities.length,0);assert.equal(h.recovery,'silent');assert(h.resolvedChoices);assert(h.requiresPortal);
  assert.equal(Object.values(h.resolvedChoices).filter(c=>c.kind==='portal').length,3);
  assert.deepEqual(H.choiceUpdates([h],{0:old})[0],h.resolvedChoices);
  assert.equal(H.choiceUpdates([h],{0:h.resolvedChoices}),null);

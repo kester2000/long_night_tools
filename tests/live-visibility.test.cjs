@@ -21,9 +21,9 @@ test('own private terrain and bearings about others remain valid',()=>{
  assert(!M.liveMessages(ms).some(m=>m.excluded));assert(build(ms).views[0].hears.some(h=>h.b===1));assert.deepEqual(M.soundChecklist(ms),[]);
  const wrong=[setup,route('p','[0号]甲\n【第1回合】\n[↑沙沙(正上)]')];assert(M.liveMessages(wrong)[1].excluded);
 });
-test('every missing sound gets a provisional first-sound request with round and step',()=>{
+test('missing direction remains unconfirmed without claiming first sound',()=>{
  const ms=[setup,route('r','【第1回合】\n[1号]玩家本回合的完整行动轨迹：\n[↑沙沙][↓沙沙](←撞)')];
- const rows=M.soundChecklist(ms);assert.deepEqual(rows.map(r=>[r.player,r.round,r.step]),[[1,1,1],[1,1,2]]);assert(rows.every(r=>r.state.includes('首次发声')&&r.state.includes('默认')));assert(rows[1].earlier);assert(rows[0].prompt.includes('公屏')&&rows[0].prompt.includes('你自己私聊'));
+ const rows=M.soundChecklist(ms);assert.deepEqual(rows.map(r=>[r.player,r.round,r.step]),[[1,1,1],[1,1,2]]);assert(rows.every(r=>r.state==='方位私聊尚未确认'));assert(rows[1].earlier);assert(rows[0].prompt.includes('公屏')&&rows[0].prompt.includes('你自己私聊'));
  assert(!build(ms).views[1].model.segments.flatMap(s=>s.events).some(e=>e.firstSound),'provisional labels do not create false first-sound constraints');
 });
 test('confirming public first sound or own bearing clears only the corresponding request',()=>{

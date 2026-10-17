@@ -1,0 +1,167 @@
+{
+  "version": 2,
+  "base": {
+    "version": 1,
+    "config": {
+      "size": 9,
+      "mode": "TWIST",
+      "pool": "",
+      "event": "NONE",
+      "dynamicDoors": true,
+      "silent": false,
+      "exitCount": null
+    },
+    "segments": [
+      {
+        "name": "初始轨迹",
+        "events": [],
+        "sounds": [],
+        "anchors": []
+      }
+    ],
+    "active": 0,
+    "notes": "",
+    "players": [
+      {
+        "name": "0号",
+        "alive": true
+      },
+      {
+        "name": "1号",
+        "alive": true
+      },
+      {
+        "name": "2号",
+        "alive": true
+      },
+      {
+        "name": "3号",
+        "alive": true
+      }
+    ],
+    "target": "PREVIOUS"
+  },
+  "messages": [
+    {
+      "id": "1e8376b1-29b7-4571-b077-325639c7ff00",
+      "text": "玩家人数：2",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "44eab8f5-b64a-4249-8177-671e2f3f5340",
+      "text": "模式幻变\n区块池：默认",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "ae0c9a70-ab3d-4ff0-9529-ca6b56ddacb7",
+      "text": "我是0号",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "4c27cac1-4795-4410-b968-27bfb1c779e7",
+      "text": "静音开启",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "89b28ef5-3b4b-48e2-8959-a606b1c77fdd",
+      "text": "大乱斗开启",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "0e721f32-d3ae-4c52-bed8-bf2b6f72ea2d",
+      "text": "区块池：5 6 8 9 13 14 24 45 48 49 50 51 E7 E8 E15 E16",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "e864a249-8a38-4dec-b785-159953370829",
+      "text": "【开局】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空墙墙空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "9aa248e8-d4c9-4b3a-9c01-a86853292494",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n→(↓撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "31ca71aa-f103-45c7-a711-77022fde8e39",
+      "text": "【第 1 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空墙空墙",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "2c173add-487b-4e6c-b90e-beb64069a79b",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↑↑←↑↓↑↓↓↑×3→×3↓→×3(↓撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "73801c1f-c03e-4264-8943-498034f6f18f",
+      "text": "【第 1 回合】\n【本回合完整额外信息】\n【金币公示】\n[1号：@蜻] 获得了 1 枚金币（当前共持有 1 枚）",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "585bf7c3-0730-4dee-a6f6-d9ae99d4c1e6",
+      "text": "【注意】在本回合内，门曾被按钮触发，共发生 1 次变化",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "26658158-9b88-4fa3-9886-806fb2c86436",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↑(→撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "7cf7701d-0e93-4191-a4b9-6fbed3127b67",
+      "text": "【第 2 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空墙",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "40a735cb-e8d1-4c27-80fc-ef609403cf21",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↑→↑↑(←撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "3fd22e2b-f773-473a-9d3a-75747a92352c",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n↑→↓↓→↑→×3(↓撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "d16249f8-a2b4-4cef-8edb-64884fe97496",
+      "text": "【第 3 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空墙空空",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "bf6c1c8a-21c2-4cde-ab72-e2790256da2e",
+      "text": "[1号]玩家本回合的完整行动轨迹：\n↓×4(↓撞)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "2cedadde-e288-4477-8277-c15d78895a1f",
+      "text": "[0号]玩家本回合的完整行动轨迹：\n←(陷阱)",
+      "view": 0,
+      "receiverConfirmed": true
+    },
+    {
+      "id": "f7f6c05a-a48b-4073-a3b0-52da6269efa9",
+      "text": "【第 4 回合】\n您所在位置的四周墙壁信息，按照 上下左右 顺序分别是：\n空空空空",
+      "view": 0,
+      "receiverConfirmed": true
+    }
+  ],
+  "view": 0
+}

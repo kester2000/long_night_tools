@@ -81,11 +81,11 @@ test('map domains and full-layout verification both enforce pickup locations',()
  assert.equal(E.verifyCompleteLayout({...c,coinGains:[{round:1,player:0,min:2,max:2}]},s,obs).status,'impossible');
 });
 
-test('real third-round journal retains silent portal possibilities and binds later announcements',()=>{
+test('real silent third-round journal starts with ground routes and binds announcements',()=>{
  const extra=[{id:'coin',view:1,text:'1号获得金币'},{id:'doors',view:0,text:'门曾被按钮触发，共发生 1 次变化'}];
  const b=M.build(journal.base,[...journal.messages,...extra]);
  assert.deepEqual(b.model.config.coinGains,[{round:3,player:1,min:1,max:null}]);assert.deepEqual(b.model.config.buttonCounts,{3:1});
- assert.equal(b.views[1].ambiguities[0].round,3);assert.equal(b.views[1].ambiguities[0].step,1);assert(b.views[1].ambiguities[0].silentUnknown);
+ assert.equal(b.views[1].ambiguities.length,0);
  assert.equal(b.captures.length,0);assert.deepEqual(b.model.config.coinTransferRounds,[]);
 });
 
